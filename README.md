@@ -16,8 +16,8 @@ name, GitHub handle, email, reply language and projects folder are placeholders
 filled in at install time.
 
 ```sh
-git clone https://github.com/kgdemir/claude-rules-portable.git
-cd claude-rules-portable
+git clone https://github.com/kgdemir/claude-agentic-os.git
+cd claude-agentic-os
 ./install.sh
 ```
 
