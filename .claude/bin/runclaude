@@ -414,9 +414,15 @@ if ! has_dotnet10; then
     # Microsoft's script installs per-user under ~/.dotnet: no sudo, and no
     # dependence on a distribution package that may lag the current SDK.
     echo "==> Installing .NET SDK (dotnet-install.sh, latest channel)..."
-    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
-      && bash /tmp/dotnet-install.sh --channel LTS --install-dir "$HOME/.dotnet" \
-      && export PATH="$HOME/.dotnet:$PATH"
+    # mktemp, not a fixed /tmp name: a predictable path in a world-writable
+    # directory can be pre-created as a symlink by another user, and what is
+    # downloaded to it is then executed.
+    DOTNET_INSTALLER="$(mktemp "${TMPDIR:-/tmp}/dotnet-install.XXXXXX")"
+    if curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$DOTNET_INSTALLER"; then
+      bash "$DOTNET_INSTALLER" --channel LTS --install-dir "$HOME/.dotnet" \
+        && export PATH="$HOME/.dotnet:$PATH"
+    fi
+    rm -f "$DOTNET_INSTALLER"
   fi
   hash -r
 fi
