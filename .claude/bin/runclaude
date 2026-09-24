@@ -1,0 +1,466 @@
+#!/usr/bin/env bash
+set -e
+
+# Portable runclaude launcher (macOS + Linux).
+#
+# Package installs go through pkg_install(), which picks Homebrew, apt, dnf,
+# zypper or pacman by what the machine actually has. Nothing here is specific to
+# one distribution or to one user's folder layout.
+#
+# The whole script is one brace group so bash parses it to the closing brace
+# before running a line of it. Without that, bash reads the file incrementally
+# by byte offset: this script launches claude and stays alive as its parent, so
+# a session that edits runclaude shifts the offset under the still-running
+# shell, and the tail resumes mid-token ("then" arriving as "hen: command not
+# found"). Reading it whole up front makes an in-place edit harmless until the
+# next launch. Keep the closing brace at the end of the file.
+{
+
+# Usage (both args optional, either order):
+#   runclaude                       current directory, new session
+#   runclaude <folder>              <folder>, new session
+#   runclaude <session-id>          current directory, resume session
+#   runclaude <folder> <session-id> / runclaude <session-id> <folder>
+# An argument that is an existing directory is the folder; anything else is the
+# session id passed to `claude --resume`. An argument that looks like a path
+# (contains "/" or starts with ".") but is not a directory is an error.
+DEFAULT_PROJECT_DIR="$PWD"
+# Every project lives under this root. Override with CLAUDE_ROOT in the
+# environment; the install script writes the chosen default into ~/.claude/CLAUDE.md.
+CLAUDE_ROOT="${CLAUDE_ROOT:-$HOME/claude}"
+
+usage() {
+  echo "usage: runclaude [folder] [session-id]   (either order)" >&2
+  exit 2
+}
+
+[ $# -le 2 ] || usage
+
+PROJECT_DIR=""
+SESSION_ID=""
+for ARG in "$@"; do
+  if [ -d "$ARG" ]; then
+    [ -z "$PROJECT_DIR" ] || usage
+    PROJECT_DIR="$(cd "$ARG" && pwd)"
+  elif [ -n "$ARG" ] && [ -d "$CLAUDE_ROOT/$ARG" ]; then
+    # Bare project name: `runclaude myproj` from anywhere opens $CLAUDE_ROOT/myproj.
+    [ -z "$PROJECT_DIR" ] || usage
+    PROJECT_DIR="$(cd "$CLAUDE_ROOT/$ARG" && pwd)"
+  else
+    case "$ARG" in
+      */* | .*)
+        echo "runclaude: not a directory: $ARG" >&2
+        exit 2
+        ;;
+    esac
+    [ -z "$SESSION_ID" ] || usage
+    SESSION_ID="$ARG"
+  fi
+done
+PROJECT_DIR="${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}"
+
+# Interactive picker: existing projects (most recently modified first), then
+# "Create new project". Menu and prompts go to stderr so the caller can capture
+# the chosen path from stdout.
+choose_project() {
+  local projects=() name choice
+  mkdir -p "$CLAUDE_ROOT"
+  while IFS= read -r name; do
+    projects+=("${name%/}")
+  done < <(cd "$CLAUDE_ROOT" && ls -dt */ 2>/dev/null)
+
+  echo "==> $PROJECT_DIR is not inside $CLAUDE_ROOT/<project>/. Pick a project:" >&2
+  PS3="Project #: "
+  select choice in "${projects[@]}" "Create new project"; do
+    if [ "$choice" = "Create new project" ]; then
+      while :; do
+        read -r -p "New project name: " name
+        case "$name" in
+          "" | */* | .*) echo "Invalid name (empty, contains /, or starts with .)" >&2 ;;
+          *) break ;;
+        esac
+      done
+      mkdir -p "$CLAUDE_ROOT/$name"
+      echo "==> Created $CLAUDE_ROOT/$name" >&2
+      echo "$CLAUDE_ROOT/$name"
+      return
+    elif [ -n "$choice" ]; then
+      echo "$CLAUDE_ROOT/$choice"
+      return
+    fi
+    echo "Invalid choice" >&2
+  done
+  exit 1  # EOF on stdin
+}
+
+case "$PROJECT_DIR/" in
+  "$CLAUDE_ROOT"/?*/*) ;;
+  *)
+    if [ ! -t 0 ]; then
+      echo "runclaude: $PROJECT_DIR is outside $CLAUDE_ROOT/<project>/ and no terminal to ask; pass a project" >&2
+      exit 2
+    fi
+    PROJECT_DIR="$(choose_project)"
+    ;;
+esac
+
+# Always run from the top-level project folder (~/claude/<name>), even when a
+# subfolder was passed: memsearch resolves its relative milvus.uri against the
+# current directory, so a subfolder launch would otherwise create a second
+# database inside that subfolder.
+PROJECT_NAME="${PROJECT_DIR#"$CLAUDE_ROOT"/}"
+PROJECT_DIR="$CLAUDE_ROOT/${PROJECT_NAME%%/*}"
+
+# One shared venv (memsearch etc.) for every project, activated below with
+# `source ~/.claude/.venv/bin/activate`.
+# Lives beside the launcher in ~/.claude, not in the projects root: it is tooling,
+# not a project. Override with CLAUDE_VENV.
+VENV_DIR="${CLAUDE_VENV:-$HOME/.claude/.venv}"
+# memsearch needs Python >= 3.10; macOS only ships 3.9 at /usr/bin/python3,
+# so the venv is built by uv with a uv-managed interpreter of this version.
+PY_VERSION="3.12"
+
+# memsearch config holds a RELATIVE milvus.uri (".memsearch/milvus.db") so each
+# project gets its own Milvus Lite database instead of sharing one file and
+# fighting over its exclusive lock. Relative means it resolves against the
+# current directory, so every memsearch invocation below must run from the
+# project root — hence the cd.
+cd "$PROJECT_DIR" 2>/dev/null || true
+MEMSEARCH_DB="$PROJECT_DIR/.memsearch"
+
+# -----------------------------
+# Homebrew on PATH
+# -----------------------------
+# This non-interactive shell never sources ~/.zprofile, where the Homebrew
+# installer puts `brew shellenv`, so load it explicitly (Apple Silicon first,
+# then Intel).
+for BREW_CANDIDATE in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+  if [ -x "$BREW_CANDIDATE" ]; then
+    eval "$("$BREW_CANDIDATE" shellenv)"
+    break
+  fi
+done
+# uv / claude native installers drop binaries here.
+export PATH="$HOME/.local/bin:$PATH"
+
+OS="$(uname -s)"
+
+ensure_brew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "==> Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    for BREW_CANDIDATE in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      if [ -x "$BREW_CANDIDATE" ]; then
+        eval "$("$BREW_CANDIDATE" shellenv)"
+        break
+      fi
+    done
+  fi
+}
+
+# Installs packages with whatever package manager this machine has. On macOS
+# that is Homebrew (installed if missing); on Linux the distribution's own, via
+# sudo. Unknown manager: name what is missing and carry on, rather than guess.
+pkg_install() {
+  [ $# -gt 0 ] || return 0
+  if [ "$OS" = "Darwin" ] || command -v brew >/dev/null 2>&1; then
+    ensure_brew
+    echo "==> Installing via Homebrew: $*"
+    brew install "$@"
+  elif command -v apt-get >/dev/null 2>&1; then
+    echo "==> Installing via apt: $*"
+    sudo apt-get update -qq && sudo apt-get install -y "$@"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "==> Installing via dnf: $*"
+    sudo dnf install -y "$@"
+  elif command -v zypper >/dev/null 2>&1; then
+    echo "==> Installing via zypper: $*"
+    sudo zypper install -y "$@"
+  elif command -v pacman >/dev/null 2>&1; then
+    echo "==> Installing via pacman: $*"
+    sudo pacman -S --noconfirm "$@"
+  else
+    echo "!! No supported package manager found. Install manually: $*" >&2
+    return 1
+  fi
+}
+
+# -----------------------------
+# GitHub auth via gh (uses GITHUB_PERSONAL_ACCESS_TOKEN from Claude settings env)
+# -----------------------------
+# gh reads GH_TOKEN automatically; mirror the token so both gh and its git
+# credential helper authenticate without an interactive login.
+if [ -n "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
+  export GH_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN"
+fi
+
+cd "$PROJECT_DIR"
+
+echo "==> Project: $PROJECT_DIR"
+
+# -----------------------------
+# 1. FORCE LOCAL MODE (CRITICAL FIX)
+# -----------------------------
+echo "==> Forcing fully local mode (no OpenAI)..."
+
+unset OPENAI_API_KEY
+unset OPENAI_ADMIN_KEY
+
+# memsearch reads BOTH of these from the global ~/.memsearch/config.toml only:
+#   [embedding] provider — not from any env var (MEMSEARCH_EMBEDDER is ignored);
+#     without it memsearch defaults to the openai provider and dies on a missing
+#     OPENAI_API_KEY.
+#   [milvus] uri — a project-local .memsearch.toml is NOT permitted to set it
+#     (the project layer allowlist covers collection/chunking/indexing knobs only),
+#     so a relative path here is what gives every project its own database.
+# The write below replaces the file wholesale, so it must carry both keys.
+# Directories memsearch must never index, in every project. Used both for the
+# global [indexing] exclude, applied whenever memsearch walks a folder (the
+# index step below and the plugin's watch/index runs).
+MS_EXCLUDE_DIRS=(
+  node_modules .venv venv env __pycache__ .pytest_cache .mypy_cache
+  dist build out bin obj target coverage vendor Pods
+  .next .nuxt .turbo .cache .gradle .git
+)
+MS_EXCLUDE_TOML=""
+for D in "${MS_EXCLUDE_DIRS[@]}"; do
+  MS_EXCLUDE_TOML="$MS_EXCLUDE_TOML\"$D/\", "
+done
+MS_EXCLUDE_TOML="[${MS_EXCLUDE_TOML%, }]"
+
+MS_CONFIG_DIR="$HOME/.memsearch"
+MS_CONFIG="$MS_CONFIG_DIR/config.toml"
+mkdir -p "$MS_CONFIG_DIR" "$MEMSEARCH_DB"
+if [ ! -f "$MS_CONFIG" ] \
+  || ! grep -qE 'provider[[:space:]]*=[[:space:]]*"onnx"' "$MS_CONFIG" \
+  || ! grep -qE 'uri[[:space:]]*=[[:space:]]*"\.memsearch/milvus\.db"' "$MS_CONFIG" \
+  || ! grep -qF "exclude = $MS_EXCLUDE_TOML" "$MS_CONFIG"; then
+  echo "==> Pinning memsearch to local ONNX embedder + per-project database + excludes ($MS_CONFIG)..."
+  cat > "$MS_CONFIG" <<TOML
+[embedding]
+provider = "onnx"
+
+[milvus]
+uri = ".memsearch/milvus.db"
+
+[indexing]
+ignore_files = [".gitignore"]
+exclude = $MS_EXCLUDE_TOML
+TOML
+fi
+
+# -----------------------------
+# 2. System deps
+# -----------------------------
+echo "==> Checking system dependencies..."
+
+# curl and unzip ship with macOS; on Linux they may need installing too.
+MISSING=""
+command -v curl >/dev/null 2>&1 || MISSING="$MISSING curl"
+
+command -v git >/dev/null 2>&1 || MISSING="$MISSING git"
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+command -v unzip >/dev/null 2>&1 || MISSING="$MISSING unzip"   # bun installer needs unzip
+# uv builds the venv with a modern Python (system python3 is 3.9).
+command -v uv >/dev/null 2>&1 || MISSING="$MISSING uv"
+
+if [ -n "$MISSING" ]; then
+  # shellcheck disable=SC2086  # deliberate word splitting: MISSING is a list
+  pkg_install $MISSING || echo "!! Continuing without:$MISSING" >&2
+fi
+
+gh auth setup-git >/dev/null 2>&1 || true
+
+# =============================
+# 3. INSTALL BUN (if missing)
+# =============================
+# Keep ~/.bun/bin on PATH: an older curl-installed bun lives there, and this
+# non-interactive shell never sources ~/.zshrc where that installer adds it.
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+if ! command -v bun >/dev/null 2>&1; then
+  if [ "$OS" = "Darwin" ] || command -v brew >/dev/null 2>&1; then
+    echo "==> Installing bun (Homebrew)..."
+    ensure_brew
+    brew install oven-sh/bun/bun
+  else
+    echo "==> Installing bun (official installer)..."
+    curl -fsSL https://bun.sh/install | bash
+  fi
+  hash -r
+fi
+
+# -----------------------------
+# 4. venv setup (uv-managed Python, NO repeat installs)
+# -----------------------------
+# Gate on the activate script AND interpreter version: a venv left over from a
+# failed run, or one built on the 3.9 system python, is rebuilt from scratch.
+if [ ! -f "$VENV_DIR/bin/activate" ] \
+  || ! "$VENV_DIR/bin/python" -c 'import sys; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1; then
+  echo "==> Creating venv (Python $PY_VERSION via uv)..."
+  rm -rf "$VENV_DIR"
+  uv venv --seed --python "$PY_VERSION" "$VENV_DIR"
+
+  echo "==> First install..."
+  uv pip install --python "$VENV_DIR/bin/python" "memsearch[onnx]"
+fi
+
+# shellcheck source=/dev/null
+source "$VENV_DIR/bin/activate"
+
+if ! uv pip show --python "$VENV_DIR/bin/python" memsearch >/dev/null 2>&1; then
+  uv pip install --python "$VENV_DIR/bin/python" "memsearch[onnx]"
+fi
+
+# -----------------------------
+# 5. Git sync
+# -----------------------------
+# Runs for any folder inside a git work tree (repo root, subfolder or worktree)
+# that has an origin remote. Syncs main when origin has it, otherwise origin's
+# default branch (origin/HEAD). Folders outside git are left alone.
+if REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" \
+  && git -C "$REPO_ROOT" remote get-url origin >/dev/null 2>&1; then
+  gh auth setup-git >/dev/null 2>&1 || true
+  git -C "$REPO_ROOT" fetch origin
+
+  if git -C "$REPO_ROOT" show-ref --verify --quiet refs/remotes/origin/main; then
+    SYNC_BRANCH="main"
+  else
+    # origin/HEAD is only set by clone; refresh it for repos that lack it.
+    git -C "$REPO_ROOT" symbolic-ref --quiet refs/remotes/origin/HEAD >/dev/null 2>&1 \
+      || git -C "$REPO_ROOT" remote set-head origin --auto >/dev/null 2>&1 || true
+    SYNC_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    SYNC_BRANCH="${SYNC_BRANCH#origin/}"
+  fi
+
+  if [ -n "$SYNC_BRANCH" ]; then
+    CURRENT_BRANCH=$(git -C "$REPO_ROOT" branch --show-current)
+
+    # Only fast-forward the default branch you are already on, with a clean tree.
+    # Checking out over your feature branch, or pulling onto local edits, is not
+    # this script's business.
+    if [ "$CURRENT_BRANCH" != "$SYNC_BRANCH" ]; then
+      echo "==> On $CURRENT_BRANCH, not $SYNC_BRANCH; skipping pull"
+    elif [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+      echo "==> Working tree has changes; skipping pull"
+    else
+      echo "==> Git pull $SYNC_BRANCH in $REPO_ROOT (gh-authenticated)..."
+      git -C "$REPO_ROOT" pull --ff-only origin "$SYNC_BRANCH" \
+        || echo "!! Pull was not a fast-forward; left alone" >&2
+    fi
+  else
+    echo "==> $REPO_ROOT: origin has no main or default branch; skipping pull"
+  fi
+fi
+
+# -----------------------------
+# 6. Index safely (LOCAL ONNX)
+# -----------------------------
+echo "==> Running memsearch index (local ONNX)..."
+
+# Pass folders, not a file list: memsearch applies [indexing] ignore_files and
+# exclude only while walking a folder, and removes chunks of deleted or newly
+# excluded files only under the folders it was given. The walk skips hidden
+# folders, so hidden folders that hold memory are passed as extra roots.
+INDEX_ROOTS=("$PROJECT_DIR")
+for HIDDEN in .memsearch/memory .remember; do
+  if [ -d "$PROJECT_DIR/$HIDDEN" ]; then
+    INDEX_ROOTS+=("$PROJECT_DIR/$HIDDEN")
+  fi
+done
+memsearch index -p onnx "${INDEX_ROOTS[@]}" || echo "==> Index skipped or unchanged"
+
+# -----------------------------
+# 7. Ensure Node
+# -----------------------------
+# Claude Code and any hooks that shell out to `node` need it on PATH. Prefer an
+# existing nvm install (loaded here because this non-interactive shell never
+# sources ~/.zshrc); otherwise fall back to Homebrew's node.
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$NVM_DIR/nvm.sh"
+  nvm use default >/dev/null 2>&1 || true
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "==> Installing Node..."
+  pkg_install nodejs || pkg_install node || echo "!! Install Node manually" >&2
+  hash -r
+fi
+
+# -----------------------------
+# 8. Ensure .NET SDK (10 or newer)
+# -----------------------------
+# The backend (src/ChatApp.Api etc.) targets .NET 10. Accept the official .pkg
+# install (/usr/local/share/dotnet, only on PATH in login shells via
+# /etc/paths.d) or a Homebrew one. Otherwise install Homebrew's `dotnet`
+# formula, which needs no sudo (the dotnet-sdk cask runs a .pkg that does).
+export PATH="$PATH:/usr/local/share/dotnet:$HOME/.dotnet/tools"
+
+has_dotnet10() {
+  command -v dotnet >/dev/null 2>&1 \
+    && dotnet --list-sdks 2>/dev/null | grep -qE '^(1[0-9]|[2-9][0-9])\.'
+}
+
+if ! has_dotnet10; then
+  if [ "$OS" = "Darwin" ] || command -v brew >/dev/null 2>&1; then
+    echo "==> Installing .NET SDK (Homebrew)..."
+    ensure_brew
+    brew install dotnet
+  else
+    # Microsoft's script installs per-user under ~/.dotnet: no sudo, and no
+    # dependence on a distribution package that may lag the current SDK.
+    echo "==> Installing .NET SDK (dotnet-install.sh, latest channel)..."
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+      && bash /tmp/dotnet-install.sh --channel LTS --install-dir "$HOME/.dotnet" \
+      && export PATH="$HOME/.dotnet:$PATH"
+  fi
+  hash -r
+fi
+
+if [ -z "$DOTNET_ROOT" ] && has_dotnet10; then
+  # Resolve the real install dir (dotnet on PATH is usually a symlink).
+  DOTNET_BIN="$(command -v dotnet)"
+  while [ -L "$DOTNET_BIN" ]; do
+    LINK="$(readlink "$DOTNET_BIN")"
+    case "$LINK" in
+      /*) DOTNET_BIN="$LINK" ;;
+      *) DOTNET_BIN="$(dirname "$DOTNET_BIN")/$LINK" ;;
+    esac
+  done
+  DOTNET_ROOT="$(cd "$(dirname "$DOTNET_BIN")" && pwd)"
+  export DOTNET_ROOT
+fi
+
+# -----------------------------
+# 9. Ensure Claude Code CLI
+# -----------------------------
+# The native installer puts claude in ~/.local/bin (on PATH above) and
+# auto-updates it.
+if ! command -v claude >/dev/null 2>&1; then
+  echo "==> Installing Claude Code CLI (native installer)..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  hash -r
+fi
+
+# -----------------------------
+# 10. Start Claude
+# -----------------------------
+if command -v claude >/dev/null 2>&1; then
+  if [ -n "$SESSION_ID" ]; then
+    echo "==> Starting Claude (resume session $SESSION_ID)..."
+    claude --resume "$SESSION_ID"
+  else
+    echo "==> Starting Claude..."
+    claude
+  fi
+else
+  echo "==> claude not on PATH; skipping launch."
+  exit 1
+fi
+
+exit 0
+}

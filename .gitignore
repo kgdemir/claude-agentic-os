@@ -1,0 +1,6 @@
+# Backups the installer leaves behind if it is run from inside the checkout
+*.backup-*
+
+# Local scratch
+*.zip
+.DS_Store
