@@ -105,9 +105,10 @@ The installer refuses rather than writing a blank if a required detail is
 missing and it cannot ask — for example in a pipeline with no `gh` session.
 
 It never writes a credential. The only environment values it sets are
-`CAVEMAN_DEFAULT_MODE` and, if you ask for it, `ECC_DISABLED_HOOKS`.
+`CAVEMAN_DEFAULT_MODE`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (below) and, if you
+ask for it, `ECC_DISABLED_HOOKS`.
 
-It also fills in three settings a fresh machine otherwise needs by hand, and
+It also fills in five settings a fresh machine otherwise needs by hand, and
 only when `settings.json` does not already carry them:
 
 | Setting | Value | Why |
@@ -115,6 +116,8 @@ only when `settings.json` does not already carry them:
 | `includeCoAuthoredBy` | `false` | stops Claude Code appending a `Co-Authored-By` trailer to your commits |
 | `effortLevel` | `medium` | a default instead of none |
 | `theme` | `dark` | a default instead of none |
+| `subagentPromptCacheTtl` | `1h` | subagent and background caches otherwise expire after 5 idle minutes, and the next request re-pays the agent's whole history; a 1h cache write costs about 2x base input (5m: 1.25x), and `1h` is ignored while a subscription is in overage |
+| `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` | `250000` | every request re-reads the whole conversation; compacting at 250k tokens keeps that cost bounded |
 
 ## What gets installed where
 
@@ -136,6 +139,12 @@ only when `settings.json` does not already carry them:
   project-claude-template.md     starting point for a project CLAUDE.md
 ~/.claude/bin/
   runclaude                      optional launcher (only with --with-launcher)
+~/.claude/hooks/
+  check-agent-brief.py           PreToolUse hook on the Agent tool: warns (never
+                                 blocks) on a subagent brief without
+                                 Goal:/Files:/Done: lines
+                                 (Explore, claude-code-guide, statusline-setup
+                                 and forks exempt); needs python3
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)
 ~/.claude/settings.json          merged, never overwritten; backed up first
 ```
