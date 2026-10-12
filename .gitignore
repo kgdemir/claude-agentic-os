@@ -4,3 +4,6 @@
 # Local scratch
 *.zip
 .DS_Store
+
+# Local memsearch memory database
+.memsearch/
