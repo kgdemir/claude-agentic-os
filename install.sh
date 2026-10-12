@@ -665,14 +665,26 @@ fi
 #                              to commits, which the rules forbid anyway
 #   effortLevel                how hard the model works by default
 #   theme                      terminal colours
+#   subagentPromptCacheTtl     keeps subagent and background prompt caches warm
+#                              for an hour instead of 5 minutes, so an agent
+#                              that sits idle does not re-pay its whole history
+#                              (ignored while a subscription is in overage)
+#   env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+#                              every request re-reads the whole conversation;
+#                              compacting at this many tokens keeps that bounded
+# README.md and guides/agent-working-rules.md quote these two values; change
+# them there too. tools/check-values.sh fails when they drift.
+SUBAGENT_CACHE_TTL="1h"
+AUTO_COMPACT_WINDOW="250000"
 if command -v python3 >/dev/null 2>&1; then
   SETTINGS="$DEST/settings.json"
   if [ -e "$SETTINGS" ] && [ ! -e "$SETTINGS.backup-$STAMP" ]; then
     cp -p "$SETTINGS" "$SETTINGS.backup-$STAMP"
     echo "    backed up  $SETTINGS.backup-$STAMP"
   fi
-  python3 - "$SETTINGS" <<'PY'
-import json, sys
+  SUBAGENT_CACHE_TTL="$SUBAGENT_CACHE_TTL" AUTO_COMPACT_WINDOW="$AUTO_COMPACT_WINDOW" \
+    python3 - "$SETTINGS" <<'PY'
+import json, os, sys
 
 path = sys.argv[1]
 try:
@@ -690,18 +702,116 @@ defaults = {
     "includeCoAuthoredBy": False,
     "effortLevel": "medium",
     "theme": "dark",
+    "subagentPromptCacheTtl": os.environ["SUBAGENT_CACHE_TTL"],
+}
+env_defaults = {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": os.environ["AUTO_COMPACT_WINDOW"],
 }
 # Membership, not setdefault's return value: `False is False` is true, so a
 # boolean default would report itself as newly added on every re-run.
 added = [key for key in defaults if key not in data]
 for key in added:
     data[key] = defaults[key]
+env = data.setdefault("env", {})
+if not isinstance(env, dict):
+    print(f"!! {path}: env is not an object; set "
+          + ", ".join(f"{k}={v}" for k, v in env_defaults.items()) + " by hand",
+          file=sys.stderr)
+    env_defaults = {}
+for key, value in env_defaults.items():
+    if key not in env:
+        env[key] = value
+        added.append(f"env.{key}")
 if added:
     with open(path, "w") as fh:
         json.dump(data, fh, indent=2)
         fh.write("\n")
 print("    defaults   " + (", ".join(added) if added else "already set"))
 PY
+fi
+
+# ---------------------------------------------------------------- brief hook
+
+# Reminds the model (warn-only, never blocks) when an Agent brief lacks
+# Goal:/Files:/Done: lines, so subagents do not stall on follow-up questions
+# while their cache expires. The registered command is recorded next to the
+# script, so a re-run (even from another path) replaces exactly the entry it
+# wrote before and never touches a hook of yours that happens to share a name.
+if command -v python3 >/dev/null 2>&1; then
+  BRIEF_HOOK="$DEST/hooks/check-agent-brief.py"
+  mkdir -p "$DEST/hooks"
+  if [ -e "$BRIEF_HOOK" ] && ! cmp -s "$SRC_DIR/.claude/hooks/check-agent-brief.py" "$BRIEF_HOOK"; then
+    cp -p "$BRIEF_HOOK" "$BRIEF_HOOK.backup-$STAMP"
+    echo "    backed up  $BRIEF_HOOK.backup-$STAMP"
+  fi
+  cp -p "$SRC_DIR/.claude/hooks/check-agent-brief.py" "$BRIEF_HOOK"
+  chmod +x "$BRIEF_HOOK"
+  echo "    installed  $BRIEF_HOOK"
+
+  SETTINGS="$DEST/settings.json"
+  BRIEF_HOOK="$BRIEF_HOOK" BRIEF_HOOK_STATE="$DEST/hooks/check-agent-brief.registered" \
+    python3 - "$SETTINGS" <<'PY'
+import json, os, shlex, sys
+
+path = sys.argv[1]
+script = os.environ["BRIEF_HOOK"]
+command = "python3 " + shlex.quote(script)
+state = os.environ["BRIEF_HOOK_STATE"]
+try:
+    with open(state) as fh:
+        previous = fh.read().strip()
+except FileNotFoundError:
+    previous = ""
+ours = {command, previous} - {""}
+# A plain name list: Claude Code splits it on "|" and matches each name exactly
+# (a regex like "^(Agent|Task)$" would skip that path and its tool aliases).
+matcher = "Agent|Task"
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError("settings.json is not an object")
+except FileNotFoundError:
+    data = {}
+except Exception as exc:                          # malformed file: leave it alone
+    print(f"!! {path}: {exc}; register {command} by hand", file=sys.stderr)
+    raise SystemExit(0)
+
+hooks = data.setdefault("hooks", {})
+pre = hooks.setdefault("PreToolUse", []) if isinstance(hooks, dict) else None
+if not isinstance(pre, list):
+    print(f"!! {path}: hooks.PreToolUse is not a list; register {command} by hand",
+          file=sys.stderr)
+    raise SystemExit(0)
+
+def is_ours(hook):
+    return isinstance(hook, dict) and hook.get("command") in ours
+
+wanted = {"matcher": matcher, "hooks": [{"type": "command", "command": command}]}
+if wanted in pre and sum(
+    is_ours(h) for e in pre if isinstance(e, dict) for h in e.get("hooks", []) or []
+) == 1:
+    print("    brief hook already registered")
+else:
+    # Drop the entries this installer wrote before (old path or matcher), add one.
+    kept = []
+    for entry in pre:
+        if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            entry = dict(entry, hooks=[h for h in entry["hooks"] if not is_ours(h)])
+            if not entry["hooks"]:
+                continue
+        kept.append(entry)
+    kept.append(wanted)
+    hooks["PreToolUse"] = kept
+    with open(path, "w") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+    print(f"    registered brief hook in {path}")
+with open(state, "w") as fh:
+    fh.write(command + "\n")
+PY
+else
+  echo "!! python3 not found; skipping the subagent brief hook" >&2
 fi
 
 # ------------------------------------------------------------ authentication
