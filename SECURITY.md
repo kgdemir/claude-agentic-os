@@ -35,11 +35,13 @@ Markdown into `~/.claude/`.
 ## What it never does
 
 - It never writes, reads or copies a credential, token or API key. The only
-  environment values it sets are `CAVEMAN_DEFAULT_MODE` and, when you ask for
-  it, `ECC_DISABLED_HOOKS`.
+  environment values it sets are `CAVEMAN_DEFAULT_MODE`,
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and, when you ask for it,
+  `ECC_DISABLED_HOOKS`.
 - It never sends anything anywhere. The only network access is the package
   manager, the Claude Code installer and the plugin marketplaces.
-- It never deletes a file. Replacements are backed up first.
+- It never deletes a file. Replacements are backed up first, and guides from
+  the old flat layout are renamed to `<name>.backup-<timestamp>`, not removed.
 
 ## Third-party trust
 

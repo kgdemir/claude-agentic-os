@@ -13,7 +13,8 @@ it cost.
 
 Nothing in the pack is tied to one person, one machine or one repository. Your
 name, GitHub handle, email, reply language and projects folder are placeholders
-filled in at install time.
+filled in at install time. The rule that keeps every project in that folder is
+optional (`--no-project-location`).
 
 ```sh
 git clone https://github.com/kgdemir/claude-agentic-os.git
@@ -62,7 +63,8 @@ holding them.
 
 | Piece | What it does |
 | --- | --- |
-| **Global rules** (`~/.claude/CLAUDE.md` + `guides/`) | verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records |
+| **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, React, Vite, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
@@ -283,7 +285,7 @@ Skip it if you would rather manage your own tooling; the rules work without it.
 
 ## Adapting the rules
 
-The guides are ordinary Markdown, meant to be edited. Two things to know before
+The guides are ordinary Markdown, meant to be edited. Three things to know before
 you cut something:
 
 - Core guides are imported into every session; add-on guides cost nothing
@@ -298,7 +300,9 @@ you cut something:
 ## Uninstalling and rolling back
 
 Every file the installer replaces is kept as `<name>.backup-<timestamp>` in the
-same directory, `settings.json` included. To undo a run, move the backups back.
+same directory, `settings.json` included. Guides from the old flat layout
+(`~/.claude/guides/<name>.md`) are moved aside the same way. To undo a run, move
+the backups back.
 To drop the plugins: `claude plugin uninstall <plugin>@<marketplace>` and
 `claude plugin marketplace remove <marketplace>`. To drop the rules, delete
 `~/.claude/CLAUDE.md`, `~/.claude/guides/` and `~/.claude/templates/`. To unwire
