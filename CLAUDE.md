@@ -7,7 +7,10 @@ per-person placeholders and installs them into `~/.claude`.
 - `.claude/` is the **product**, not this repo's own config: `.claude/CLAUDE.md` is the
   template installed as `~/.claude/CLAUDE.md`, with `{{PLACEHOLDERS}}` left unfilled on
   purpose. Never fill them in here.
-- `.claude/guides/*.md` (one topic each), `.claude/templates/*.md`,
+- `.claude/guides/core/` is `@`-imported into every session; `stacks/`, `tools/`,
+  `features/`, `plugins/` and `addons/` are add-ons listed with a trigger and read
+  on demand (ADR-0007). One topic per file; a tool or feature never hides inside
+  a stack or core guide. `.claude/templates/*.md`,
   `.claude/hooks/check-agent-brief.py` (ADR-0006), `.claude/bin/runclaude`,
   `.claude/statusline-{linux,macos}.sh`.
 - `install.sh` — Bash; detection, substitution, plugins, statusline, settings merge,

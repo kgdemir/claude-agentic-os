@@ -95,6 +95,7 @@ Non-interactive:
 | `--github` | GitHub username |
 | `--email` | Contact email; defaults to your GitHub address, or the `id+login@users.noreply.github.com` form when your address is private |
 | `--project-root` | Where your projects live (default `~/claude`) |
+| `--with-project-location` / `--no-project-location` | Import the add-on rule that keeps every project under `--project-root` and asks which one to load when Claude starts elsewhere (`-y`: on), or leave it out |
 | `--with-launcher` / `--no-launcher` | Install the optional launcher, or skip the question |
 | `--with-statusline` / `--no-statusline` | Install the statusline, or skip the question |
 | `--with-plugins` / `--no-plugins` | Install the plugin set, or skip the question |
@@ -122,18 +123,36 @@ only when `settings.json` does not already carry them:
 ## What gets installed where
 
 ```
-~/.claude/CLAUDE.md              global rules; imports each guide below
+~/.claude/CLAUDE.md              global rules; imports the core guides and lists
+                                 each add-on with the trigger that loads it
 ~/.claude/guides/
-  agent-working-rules.md         verification, diagnosis, background work, git,
+  core/                          always loaded, every project
+    agent-working-rules.md       verification, diagnosis, background work, git,
                                  code quality, decisions and memory
-  project-tools.md               repeatable commands live in tools/ scripts
-  project-claude-md.md           each project keeps its own CLAUDE.md
-  project-docs.md                README.md, capabilities.md, SECURITY.md
-  docs-updates.md                docs change on request; baseline marker; PDF rules
-  docs-folder.md                 docs/adr/ and docs/user-guides/ layout
-  dotnet.md                      .NET conventions (test gate, warnings as errors)
-  dotnet-gotchas.md              .NET traps that fail silently
-  react.md                       ESLint rules, render-loop guards, chunk grouping
+    project-tools.md             repeatable commands live in tools/ scripts
+    project-claude-md.md         each project keeps its own CLAUDE.md
+    project-docs.md              README.md, capabilities.md, SECURITY.md
+    docs-updates.md              docs change on request; baseline marker
+    docs-folder.md               docs/adr/ and docs/user-guides/ layout
+  stacks/                        read when the project uses that stack
+    dotnet.md                    .NET conventions (test gate, warnings as errors)
+    dotnet-gotchas.md            .NET traps that fail silently
+    dotnet-ef-core.md            Entity Framework Core traps
+    react.md                     ESLint rules, render-loop guards
+  tools/                         read when the project uses that tool
+    vite.md                      chunk grouping and size budget
+    child-processes.md           pipe and kill traps, any language
+    ffmpeg.md                    ffmpeg/ffprobe traps (duration, option order)
+    pdf-export.md                Markdown-to-PDF build and checks (always A4)
+  features/                      read when the project has that feature
+    realtime-media.md            WebSocket, SignalR, WebRTC, SFU: what to document
+    ai-models.md                 shipped vs proof-of-concept models
+  plugins/                       read when that plugin is active
+    caveman.md                   terse reply style
+    context-mode.md              sandboxed tool output
+    memsearch.md                 one memory database per project
+  addons/                        imported only when chosen at install
+    project-location.md          every project under --project-root
 ~/.claude/templates/
   adr-template.md                architecture decision record
   project-claude-template.md     starting point for a project CLAUDE.md
@@ -195,7 +214,7 @@ Facts Claude learns are kept per project, never in one shared pile:
   no file is left unreferenced.
 - **Each project gets its own memsearch database.** A shared database mixes
   unrelated repositories and answers a question about one codebase with a fact
-  from another. The rule is in the installed `CLAUDE.md`.
+  from another. The rule is in `guides/plugins/memsearch.md`.
 - Memory is context, not truth: anything a stored note claims about the code is
   verified against the code before it is acted on.
 
@@ -267,10 +286,13 @@ Skip it if you would rather manage your own tooling; the rules work without it.
 The guides are ordinary Markdown, meant to be edited. Two things to know before
 you cut something:
 
+- Core guides are imported into every session; add-on guides cost nothing
+  until their trigger in `~/.claude/CLAUDE.md` matches. A rule for one stack,
+  tool, feature or plugin belongs in its own add-on file, not in a core guide.
 - Each rule in `agent-working-rules.md` and `dotnet-gotchas.md` carries a note of
   what it cost when it was learned. A rule that looks like fussiness usually has
   a broken build behind it.
-- `react.md` is version-sensitive and says so at the top. The pinned versions
+- `react.md` and `vite.md` are version-sensitive and say so at the top. The pinned versions
   expire; the reasoning does not.
 
 ## Uninstalling and rolling back

@@ -31,13 +31,13 @@ reader can judge whether it still applies instead of deleting a rule that looks 
 
 ## 4. Reproducible tooling
 
-- **Save a script the first time it works.** When a multi-line command sequence proves out, write it into the project's `tools/` directory (see `project-tools.md`), reference it from the docs or workflow that needs it, and call the script from then on.
+- **Save a script the first time it works.** When a multi-line command sequence proves out, write it into the project's `tools/` directory (see `~/.claude/guides/core/project-tools.md`), reference it from the docs or workflow that needs it, and call the script from then on.
   *Cost: the same recipe retyped by hand on every run, with environment variables drifting between attempts.*
 - **A saved script carries its own prerequisites** — environment variables, redirects, easy-to-forget flags. That is most of its value: a hand-typed invocation loses exactly those.
 
 ## 5. Documentation
 
-- **Update docs only when asked**; **expensive regeneration only when the change reaches the output**; **baseline marker, never a hash-only commit.** Full rules and costs: `docs-updates.md`.
+- **Update docs only when asked**; **expensive regeneration only when the change reaches the output**; **baseline marker, never a hash-only commit.** Full rules and costs: `~/.claude/guides/core/docs-updates.md`.
 
 ## 6. Version control
 
@@ -55,10 +55,10 @@ reader can judge whether it still applies instead of deleting a rule that looks 
 
 ## 8. Decisions and memory
 
-- **Record architectural decisions where the code lives.** After a commit that lands a real architectural choice, write an ADR (`docs-folder.md`, template `~/.claude/templates/adr-template.md`). Skip trivial, cosmetic and cleanup commits. Rationale kept only in commit messages is rationale nobody finds.
+- **Record architectural decisions where the code lives.** After a commit that lands a real architectural choice, write an ADR (`~/.claude/guides/core/docs-folder.md`, template `~/.claude/templates/adr-template.md`). Skip trivial, cosmetic and cleanup commits. Rationale kept only in commit messages is rationale nobody finds.
 - **One fact per memory file, with an index of pointers.** Never inline content into the index, and leave no file the index does not reference.
 - **Memory is context, not truth.** Verify anything a stored note claims about the code against the code before acting on it.
 
 ## Appendices
 
-- .NET: `dotnet-gotchas.md`.
+- Stack, tool, feature and plugin guides load on demand: see the add-on table in `~/.claude/CLAUDE.md`.

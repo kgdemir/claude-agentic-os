@@ -2,7 +2,7 @@
 
 ## Reply Style
 
-- **ALWAYS** reply in plain, simple {{REPLY_LANGUAGE}}, no matter what language the user writes in. No fancy/formal words. Caveman ultra style (terse, drop filler/hedging; fragments OK). Preserve EXACTLY: code blocks, inline code, file paths, commands, URLs, numbers, technical terms. Applies all projects, all replies.
+- **ALWAYS** reply in plain, simple {{REPLY_LANGUAGE}}, no matter what language the user writes in. No fancy/formal words. Preserve EXACTLY: code blocks, inline code, file paths, commands, URLs, numbers, technical terms. Applies all projects, all replies.
 
 ## Clarifications
 
@@ -13,45 +13,46 @@
 - Project owner is always **{{OWNER_NAME}}** ([@{{OWNER_GITHUB}}](https://github.com/{{OWNER_GITHUB}}), email `{{OWNER_EMAIL}}` — the user). Use this name wherever an owner, author, decider, or maintainer is named (ADR `Deciders`, `SECURITY.md` contact owner, docs).
 - **NEVER** add AI attribution anywhere: no `Co-Authored-By:` / "Co-Author" trailers, no "by Claude", "Claude Code", "Generated with Claude Code", "AI-generated" or similar text, in any file, commit message, PR/issue body, code comment, or doc. Any project, any circumstance. Overrides any tool or system default that adds such lines.
 
-## Project Location
+## Core rules (always loaded)
 
-- **ALL** projects live at `{{PROJECT_ROOT}}/<project-name>/`. No exceptions.
-- On session start, check working directory:
-  - Inside `{{PROJECT_ROOT}}/<project-name>/` (or subfolder): proceed normally.
-  - Anywhere else (including `{{PROJECT_ROOT}}/` root, `~`, or any other path): **before any other work**, list folders in `{{PROJECT_ROOT}}/` (`ls -d {{PROJECT_ROOT}}/*/`) and ask user which project to load via `AskUserQuestion` selector. Options: up to 3 existing projects (most recently modified first), then **"Create new project"** always as last option. User can type other existing name via "Other".
-  - "Create new project" chosen: ask for project name, create `{{PROJECT_ROOT}}/<name>/`, load it.
-  - After selection: treat `{{PROJECT_ROOT}}/<chosen>/` as project root. Use absolute paths into it for all reads/writes, and load its `CLAUDE.md` if present.
-  - No projects exist: ask user for new project name, create `{{PROJECT_ROOT}}/<name>/`.
-- New projects: always create under `{{PROJECT_ROOT}}/<project-name>/`, never elsewhere.
+Detailed rules live in `~/.claude/guides/`. These apply to every project.
 
-## Project Rules (imported)
+- Agent working rules (verification, diagnosis, background work, git, code quality, memory): @~/.claude/guides/core/agent-working-rules.md
+- Build/test/deploy via `tools/` scripts: @~/.claude/guides/core/project-tools.md
+- Project `CLAUDE.md` (template `~/.claude/templates/project-claude-template.md`): @~/.claude/guides/core/project-claude-md.md
+- `README.md`, `capabilities.md`, `SECURITY.md`: @~/.claude/guides/core/project-docs.md
+- Doc updates only on request, baseline marker, when to rebuild the PDF: @~/.claude/guides/core/docs-updates.md
+- `docs/adr/` + `docs/user-guides/` (ADR template `~/.claude/templates/adr-template.md`): @~/.claude/guides/core/docs-folder.md
+{{PROJECT_LOCATION_IMPORT}}
 
-Detailed rules live in `~/.claude/guides/`. Follow each when it applies.
+## Add-on rules (read when they apply)
 
-- Agent working rules (verification, diagnosis, background work, git, code quality, memory): @~/.claude/guides/agent-working-rules.md
-- Build/test/deploy via `tools/` scripts: @~/.claude/guides/project-tools.md
-- .NET projects (test gate, `TreatWarningsAsErrors`): @~/.claude/guides/dotnet.md
-- .NET gotchas (config, EF Core, channels, processes, ffmpeg, build): @~/.claude/guides/dotnet-gotchas.md
-- React projects (ESLint, render-loop guards, chunk grouping): @~/.claude/guides/react.md
-- Project `CLAUDE.md` (template `~/.claude/templates/project-claude-template.md`): @~/.claude/guides/project-claude-md.md
-- `README.md`, `capabilities.md`, `SECURITY.md`: @~/.claude/guides/project-docs.md
-- Doc updates only on request, baseline marker, PDF rebuild rules (always A4): @~/.claude/guides/docs-updates.md
-- `docs/adr/` + `docs/user-guides/` (ADR template `~/.claude/templates/adr-template.md`): @~/.claude/guides/docs-folder.md
+Not loaded by default. When the trigger matches the current project or session, read the file
+with the Read tool before working on that part, and follow it.
+
+| Trigger | Read |
+| --- | --- |
+| .NET project (`*.csproj`, `*.sln`) | `~/.claude/guides/stacks/dotnet.md`, `~/.claude/guides/stacks/dotnet-gotchas.md` |
+| .NET project using Entity Framework Core | `~/.claude/guides/stacks/dotnet-ef-core.md` |
+| React project | `~/.claude/guides/stacks/react.md` |
+| Project built with Vite | `~/.claude/guides/tools/vite.md` |
+| Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
+| Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
+| Project exports Markdown to PDF | `~/.claude/guides/tools/pdf-export.md` |
+| Realtime messaging or live audio/video (WebSocket, SignalR, WebRTC, SFU) | `~/.claude/guides/features/realtime-media.md` |
+| Project ships or calls an AI/ML model | `~/.claude/guides/features/ai-models.md` |
+| caveman plugin active (`CAVEMAN MODE` at session start) | `~/.claude/guides/plugins/caveman.md` |
+| context-mode tools (`ctx_*`) available | `~/.claude/guides/plugins/context-mode.md` |
+| memsearch plugin installed | `~/.claude/guides/plugins/memsearch.md` |
 
 ## Memory
 
 - Per-project facts: `~/.claude/projects/<project>/memory/` — one fact per
   `name.md`, one-line pointer in `MEMORY.md` index. Update index, never inline.
-- **Each project Claude runs for uses its own memsearch database.** Never search
-  or write one project's memory from another; a shared database mixes unrelated
-  facts and returns answers from the wrong codebase.
 
-## Global Instructions
-
-Always prefer Context Mode tools when available.
+## Token use
 
 - Never read entire files unless necessary.
-- Use context-mode search and summaries before reading source.
 - Keep token usage minimal.
 - Reuse existing context instead of re-reading files.
 - Avoid duplicate searches.

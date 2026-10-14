@@ -7,7 +7,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 INSTALLER="install.sh"
 README="README.md"
-GUIDE=".claude/guides/agent-working-rules.md"
+GUIDE=".claude/guides/core/agent-working-rules.md"
 TOKENS_PER_K=1000
 
 value_of() { # value_of <NAME>: the quoted value assigned to NAME in install.sh

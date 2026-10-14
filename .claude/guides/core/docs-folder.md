@@ -17,8 +17,8 @@ Every project has `docs/` with `docs/adr/` and `docs/user-guides/`. Missing: cre
 
 - Written for end users, not developers: task-oriented, step by step, UI language of the product, screenshots in `images/`.
 - Required files: `README.md` (index/table of contents), `getting-started.md`, `troubleshooting.md`, `PROGRESS.md`, `combined.md`, `combined.pdf`, `images/`.
-- One page per user-facing feature area, named by the project's features (e.g. messaging, calling, meetings, settings). Names change per project; derive them from `capabilities.md`.
+- One page per user-facing feature area, named by the project's features (e.g. for a shop: catalogue, cart, checkout, account). Names change per project; derive them from `capabilities.md`.
 - `PROGRESS.md`: which pages are done, pending, or outdated, plus screenshot status. Update it on every guide change.
 - `combined.md` = all pages concatenated in `README.md` order; `combined.pdf` generated from it, always A4. Both produced by a `tools/` script (e.g. `tools/build-user-guide.sh`), never edited by hand.
-- Guide pages change only on user request (`~/.claude/guides/docs-updates.md`). When asked: update or add the page, `README.md` index, `PROGRESS.md`, then regenerate `combined.*`.
+- Guide pages change only on user request (`~/.claude/guides/core/docs-updates.md`). When asked: update or add the page, `README.md` index, `PROGRESS.md`, then regenerate `combined.*`.
 - Every image referenced exists, every file in `images/` is referenced.

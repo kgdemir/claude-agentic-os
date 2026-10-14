@@ -19,10 +19,9 @@ Run through `tools/` scripts (see global rules); raw commands listed for referen
 <One-time per-clone setup, e.g. git hooks install, and why it is needed.>
 
 ## Quality gates (must pass before commit)
-- **C#:** `TreatWarningsAsErrors=true`, `Nullable=enable` — zero warnings.
-- **C# tests gate builds/publish:** <how the gate is enforced (script or MSBuild target), emergency skip if any, ADR ref>.
-- **TS/React:** all ESLint rules are errors; `--max-warnings=0`. No `eslint-disable` —
-  fix root cause (only proven false positives, with explanation).
+- <One bullet per stack, with the exact gate its stack guide names (e.g. .NET: warnings as
+  errors + test gate, `~/.claude/guides/stacks/dotnet.md`; React: ESLint errors, `--max-warnings=0`,
+  `~/.claude/guides/stacks/react.md`). Drop stacks the project does not use.>
 - <Project-specific gates: contract checks, evals, type-check, etc.>
 - No magic numbers/strings — extract named constants.
 
@@ -38,7 +37,7 @@ Run through `tools/` scripts (see global rules); raw commands listed for referen
 
 ## Docs
 - `README.md` — overview, architecture, commands, quality gates.
-- Docs change only on request (`~/.claude/guides/docs-updates.md`); after a code change, name the doc that needs a line and stop.
+- Docs change only on request (`~/.claude/guides/core/docs-updates.md`); after a code change, name the doc that needs a line and stop.
 - `capabilities.md` — authoritative feature + tech-stack reference; ends with the `DOC-BASELINE` marker.
 - `SECURITY.md` — security policy and posture.
 - User guide in `docs/user-guides/`. When asked to edit: update `PROGRESS.md`, regenerate `combined.md` / `combined.pdf` via `tools/<guide script>` (PDF only if a guide page changed; always A4).

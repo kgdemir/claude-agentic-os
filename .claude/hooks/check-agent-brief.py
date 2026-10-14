@@ -5,7 +5,7 @@ cannot be finished in one go.
 A subagent that has to come back with a question sits idle while it waits, and
 once it is idle past its prompt cache TTL, waking it re-pays its whole history.
 Every brief therefore should carry a `Goal:`, `Files:` and `Done:` line (see
-"Background work and delegation" in guides/agent-working-rules.md).
+"Background work and delegation" in guides/core/agent-working-rules.md).
 
 Warn-only: the call always goes through. A brief missing a line gets a reminder
 added to the model's context, so briefs written by skills and plugins never

@@ -13,6 +13,7 @@ OWNER_NAME=""
 OWNER_GITHUB=""
 OWNER_EMAIL=""
 PROJECT_ROOT=""
+WITH_PROJECT_LOCATION=""
 WITH_LAUNCHER=""
 WITH_STATUSLINE=""
 WITH_PLUGINS=""
@@ -28,6 +29,10 @@ usage: ./install.sh [options]
   --github <handle>      GitHub username
   --email <address>      Contact email (default: derived from GitHub)
   --project-root <path>  Where projects live (default: ~/claude)
+  --with-project-location
+                         Load the add-on rule that keeps every project under
+                         the project root (default with -y)
+  --no-project-location  Leave that rule out
   --with-launcher        Also install the runclaude launcher
   --no-launcher          Skip the launcher without asking
   --with-statusline      Install the statusline for this OS and register it
@@ -49,6 +54,8 @@ while [ $# -gt 0 ]; do
     --github) OWNER_GITHUB="${2:-}"; shift 2 ;;
     --email) OWNER_EMAIL="${2:-}"; shift 2 ;;
     --project-root) PROJECT_ROOT="${2:-}"; shift 2 ;;
+    --with-project-location) WITH_PROJECT_LOCATION=yes; shift ;;
+    --no-project-location) WITH_PROJECT_LOCATION=no; shift ;;
     --with-launcher) WITH_LAUNCHER=yes; shift ;;
     --no-launcher) WITH_LAUNCHER=no; shift ;;
     --with-statusline) WITH_STATUSLINE=yes; shift ;;
@@ -171,6 +178,21 @@ fi
 [ -n "$PROJECT_ROOT" ] || PROJECT_ROOT="$(ask 'Where your projects live' "$HOME/claude")"
 PROJECT_ROOT="${PROJECT_ROOT%/}"
 
+# The project-location rule is an add-on: some people keep projects anywhere.
+# -y keeps it on, which is how earlier versions of the pack behaved.
+if [ -z "$WITH_PROJECT_LOCATION" ]; then
+  if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
+    WITH_PROJECT_LOCATION=yes
+  else
+    ANSWER="$(ask "Keep every project under $PROJECT_ROOT (Claude asks which project to load when started elsewhere)?" 'yes')"
+    case "$ANSWER" in [Yy]*) WITH_PROJECT_LOCATION=yes ;; *) WITH_PROJECT_LOCATION=no ;; esac
+  fi
+fi
+PROJECT_LOCATION_IMPORT=""
+if [ "$WITH_PROJECT_LOCATION" = "yes" ]; then
+  PROJECT_LOCATION_IMPORT="- Project location (all projects under one root): @~/.claude/guides/addons/project-location.md"
+fi
+
 MISSING_FIELDS=""
 [ -n "$REPLY_LANGUAGE" ] || MISSING_FIELDS="$MISSING_FIELDS language"
 [ -n "$OWNER_NAME" ] || MISSING_FIELDS="$MISSING_FIELDS name"
@@ -186,6 +208,7 @@ echo "    Reply language : $REPLY_LANGUAGE"
 echo "    Owner          : $OWNER_NAME (@$OWNER_GITHUB)"
 echo "    Email          : $OWNER_EMAIL"
 echo "    Project root   : $PROJECT_ROOT"
+echo "    Location rule  : $WITH_PROJECT_LOCATION"
 echo
 
 # --------------------------------------------------------------------- write
@@ -206,6 +229,7 @@ install_file() { # install_file <relative path>
       -e "s|{{OWNER_GITHUB}}|$OWNER_GITHUB|g" \
       -e "s|{{OWNER_EMAIL}}|$OWNER_EMAIL|g" \
       -e "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" \
+      -e "s|{{PROJECT_LOCATION_IMPORT}}|$PROJECT_LOCATION_IMPORT|g" \
       "$src" > "$dst"
   echo "    installed  $dst"
 }
@@ -214,6 +238,17 @@ while IFS= read -r REL; do
   install_file "$REL"
 done < <(cd "$SRC_DIR" && find .claude -type f -name '*.md' | sort)
 
+# Guides used to sit flat in guides/; they now live in core/, stacks/, tools/
+# and friends. A flat copy left behind would be read as a second, stale rule.
+for OLD in agent-working-rules project-tools project-claude-md project-docs \
+           docs-updates docs-folder dotnet dotnet-gotchas react ffmpeg \
+           child-processes; do
+  if [ -f "$DEST/guides/$OLD.md" ]; then
+    mv "$DEST/guides/$OLD.md" "$DEST/guides/$OLD.md.backup-$STAMP"
+    echo "    moved old  $DEST/guides/$OLD.md.backup-$STAMP"
+  fi
+done
+
 LEFTOVER="$(grep -rl '{{' "$DEST" --include='*.md' 2>/dev/null || true)"
 if [ -n "$LEFTOVER" ]; then
   echo "!! Placeholders left unsubstituted in:" >&2
@@ -221,7 +256,9 @@ if [ -n "$LEFTOVER" ]; then
   exit 1
 fi
 
-mkdir -p "$PROJECT_ROOT"
+if [ "$WITH_PROJECT_LOCATION" = "yes" ]; then
+  mkdir -p "$PROJECT_ROOT"
+fi
 
 # ------------------------------------------------------------------ launcher
 
@@ -672,7 +709,7 @@ fi
 #   env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
 #                              every request re-reads the whole conversation;
 #                              compacting at this many tokens keeps that bounded
-# README.md and guides/agent-working-rules.md quote these two values; change
+# README.md and guides/core/agent-working-rules.md quote these two values; change
 # them there too. tools/check-values.sh fails when they drift.
 SUBAGENT_CACHE_TTL="1h"
 AUTO_COMPACT_WINDOW="250000"
