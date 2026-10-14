@@ -62,3 +62,9 @@ Introduced in commit `4df83d3`.
 
 ### Risks
 - `sed` with `|` as delimiter breaks if a substituted value ever contains `|`.
+
+## Amendment 2026-10-14
+
+Only `guides/core/` is still imported. Stack, tool, feature, plugin and add-on
+guides moved to their own folders and are read on demand from a trigger table
+(ADR-0007). `{{PROJECT_LOCATION_IMPORT}}` joined the placeholders.

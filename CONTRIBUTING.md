@@ -14,8 +14,16 @@ Repository-specific rules go in that repository's own `CLAUDE.md`.
 ## Layout
 
 ```
-.claude/CLAUDE.md          the global rules; imports every guide
-.claude/guides/*.md        one topic per file
+.claude/CLAUDE.md          the global rules; imports core/, lists add-ons
+                           with the trigger that loads each one
+.claude/guides/core/       rules for every project, always loaded
+.claude/guides/stacks/     one language or framework per file
+.claude/guides/tools/      one tool per file (ffmpeg, Vite, a database, a
+                           CLI), never a section in a stack guide
+.claude/guides/features/   one product feature per file (realtime media, AI
+                           models), never a section in a core guide
+.claude/guides/plugins/    rules that only make sense with that plugin
+.claude/guides/addons/     personal preferences the installer asks about
 .claude/templates/*.md     ADR and project CLAUDE.md starting points
 .claude/bin/runclaude      optional launcher
 .claude/statusline-*.sh    one build per operating system
@@ -33,6 +41,7 @@ Never hard-code a person, a machine or a path. The installer substitutes:
 | `{{OWNER_GITHUB}}` | GitHub handle |
 | `{{OWNER_EMAIL}}` | contact email |
 | `{{PROJECT_ROOT}}` | where the person's projects live |
+| `{{PROJECT_LOCATION_IMPORT}}` | the import line for `addons/project-location.md`, or nothing when the person opts out |
 
 The installer aborts if any `{{` survives substitution, so a new placeholder
 needs a matching `sed` expression in `install_file()`.
