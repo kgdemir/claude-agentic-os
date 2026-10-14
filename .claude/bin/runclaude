@@ -394,7 +394,7 @@ fi
 # -----------------------------
 # 8. Ensure .NET SDK (10 or newer)
 # -----------------------------
-# The backend (src/ChatApp.Api etc.) targets .NET 10. Accept the official .pkg
+# .NET 10 is the minimum the launcher installs for. Accept the official .pkg
 # install (/usr/local/share/dotnet, only on PATH in login shells via
 # /etc/paths.d) or a Homebrew one. Otherwise install Homebrew's `dotnet`
 # formula, which needs no sudo (the dotnet-sdk cask runs a .pkg that does).
