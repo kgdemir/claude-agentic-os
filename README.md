@@ -294,7 +294,7 @@ you cut something:
   until their trigger in `~/.claude/CLAUDE.md` matches. A rule for one stack,
   tool, feature or plugin belongs in its own add-on file, not in a core guide.
 - Each rule in `agent-working-rules.md` and `dotnet-gotchas.md` carries a note of
-  what it cost when it was learned. A rule that looks like fussiness usually has
+  what it cost when it was learned, or a *Why* line when it is preventive. A rule that looks like fussiness usually has
   a broken build behind it.
 - `react.md`, `eslint.md` and `vite.md` are version-sensitive and say so at the top. The pinned versions
   expire; the reasoning does not.

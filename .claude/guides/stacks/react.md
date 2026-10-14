@@ -1,7 +1,7 @@
 # React projects
 
-> **Version-sensitive.** The pins and bundler options below were correct on
-> 2026-09-24. ESLint 10 support moves; recheck
+> **Version-sensitive.** The plugin versions below (`react-hooks` v7+, ESLint 10 support) were
+> correct on 2026-09-24; recheck
 > against the current plugin docs before trusting a specific version claim here.
 > The rule choices themselves (which lint rules catch render loops) do not expire.
 
@@ -10,6 +10,7 @@
   - `eslint-plugin-react-hooks` (latest, v7+) `recommended` config, incl. React Compiler rules
   - `eslint-plugin-react-refresh` (`only-export-components` warn) for Vite
   - `eslint-plugin-jsx-a11y` recommended
+  - Keep `eslint@^9` / `@eslint/js@^9` until `eslint-plugin-react` and `eslint-plugin-jsx-a11y` support ESLint 10 (checked 2026-09-24).
 - Render-loop / re-render guards, always `error` (override preset levels):
   - `react-hooks/rules-of-hooks`
   - `react-hooks/exhaustive-deps` (missing or unstable deps: effect re-runs forever)

@@ -12,12 +12,12 @@ is silent: the code runs, and the data is wrong or the save fails later.
 Preventive rules (no incident recorded here yet; each names the failure it stops):
 
 - **Read-only queries use `AsNoTracking()`.**
-  *Why: tracking costs memory and time for entities nobody saves, and a later `SaveChanges` in the same context can pick them up.*
+  *Why: tracking costs memory and time for entities nobody saves, and a stray change to an entity meant to be read-only is written by the next `SaveChanges` in that context.*
 - **No N+1 queries.** No lazy-loading proxies; load related data with `Include` or a `Select` projection. Check the SQL of a non-trivial query with `ToQueryString()` or the `Microsoft.EntityFrameworkCore.Database.Command` log.
   *Why: a loop over entities that touches a navigation property sends one query per row.*
 - **Read every generated migration before applying it.** A rename can be scaffolded as drop column + add column; turn it into `RenameColumn`/`RenameTable` by hand. Never mix `EnsureCreated` with migrations.
   *Why: drop + add loses the column's data, and nothing warns at apply time.*
 - **One `DbContext`, one operation at a time.** Never `Task.WhenAll` queries over the same context; use a context per parallel unit (`IDbContextFactory<T>`).
-  *Why: it throws "A second operation was started on this context instance" — or, with some providers, corrupts state first.*
+  *Why: it throws "A second operation was started on this context instance".*
 - **Raw SQL is parameterized:** interpolated `FromSql` / `ExecuteSql`, never `FromSqlRaw` / `ExecuteSqlRaw` with concatenated input.
   *Why: concatenated input is SQL injection.*
