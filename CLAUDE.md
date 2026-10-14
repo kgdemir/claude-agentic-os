@@ -29,7 +29,7 @@ per-person placeholders and installs them into `~/.claude`.
 - No magic numbers/strings — values shared with docs live once in `install.sh`.
 
 ## Conventions
-- Rules are project-agnostic and carry their cost (`CONTRIBUTING.md`).
+- Rules are project-agnostic and carry their cost, or a `*Why:*` line when preventive (`CONTRIBUTING.md`, ADR-0008).
 - Git: stage named paths only — never `git add -A`/`.`.
 - Owner: Kerim Gökhan DEMİR. Never add AI attribution to any file, commit, or PR.
 
