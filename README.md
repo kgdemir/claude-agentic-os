@@ -8,8 +8,9 @@ by `./install.sh`.**
 Claude Code out of the box is a capable coding agent with no opinions. This pack
 supplies the opinions: how the agent verifies its work, how it diagnoses a
 failure, when it may push, what it may rewrite, where it keeps what it learned.
-Every rule here was written after something went wrong, and each one records what
-it cost.
+Most rules here were written after something went wrong, and each records what it
+cost. The rest are preventive: each names the well-known failure it stops (a *Why*
+line) until an incident gives it a cost.
 
 Nothing in the pack is tied to one person, one machine or one repository. Your
 name, GitHub handle, email, reply language and projects folder are placeholders
@@ -137,9 +138,10 @@ only when `settings.json` does not already carry them:
     docs-updates.md              docs change on request; baseline marker
     docs-folder.md               docs/adr/ and docs/user-guides/ layout
   stacks/                        read when the project uses that stack
-    dotnet.md                    .NET conventions (test gate, warnings as errors)
+    dotnet.md                    .NET conventions (test gate, warnings as errors,
+                                 async, HttpClient, options, logging, packages)
     dotnet-gotchas.md            .NET traps that fail silently
-    dotnet-ef-core.md            Entity Framework Core traps
+    dotnet-ef-core.md            EF Core traps, tracking, N+1, migrations, raw SQL
     typescript.md                strict config, type-check gate, runtime validation
     react.md                     React lint plugins, render-loop guards, keys, XSS
   tools/                         read when the project uses that tool
