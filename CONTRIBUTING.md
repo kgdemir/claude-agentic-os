@@ -7,6 +7,10 @@ something went wrong, and the rule is what stops it happening again. Write the
 cost next to the rule, the way the existing ones do. A rule with no incident
 behind it reads as fussiness and gets deleted by the next person.
 
+A preventive rule — one that stops a well-known failure before it has happened
+here — is allowed only with a `*Why:*` line naming the failure it stops. When the
+failure does happen, replace `*Why:*` with `*Cost:*`.
+
 A rule does **not** belong here when it is specific to one repository, one
 employer, one stack version that will expire quietly, or one person's taste.
 Repository-specific rules go in that repository's own `CLAUDE.md`.
