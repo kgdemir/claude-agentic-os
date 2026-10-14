@@ -20,8 +20,9 @@ Run through `tools/` scripts (see global rules); raw commands listed for referen
 
 ## Quality gates (must pass before commit)
 - <One bullet per stack, with the exact gate its stack guide names (e.g. .NET: warnings as
-  errors + test gate, `~/.claude/guides/stacks/dotnet.md`; React: ESLint errors, `--max-warnings=0`,
-  `~/.claude/guides/stacks/react.md`). Drop stacks the project does not use.>
+  errors + test gate, `~/.claude/guides/stacks/dotnet.md`; TypeScript: `tsc --noEmit`,
+  `~/.claude/guides/stacks/typescript.md`; ESLint: `--max-warnings=0`,
+  `~/.claude/guides/tools/eslint.md`). Drop stacks the project does not use.>
 - <Project-specific gates: contract checks, evals, type-check, etc.>
 - No magic numbers/strings — extract named constants.
 

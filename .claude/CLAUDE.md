@@ -34,7 +34,9 @@ with the Read tool before working on that part, and follow it.
 | --- | --- |
 | .NET project (`*.csproj`, `*.sln`) | `~/.claude/guides/stacks/dotnet.md`, `~/.claude/guides/stacks/dotnet-gotchas.md` |
 | .NET project using Entity Framework Core | `~/.claude/guides/stacks/dotnet-ef-core.md` |
+| TypeScript project (`tsconfig.json`) | `~/.claude/guides/stacks/typescript.md` |
 | React project | `~/.claude/guides/stacks/react.md` |
+| Project linted with ESLint | `~/.claude/guides/tools/eslint.md` |
 | Project built with Vite | `~/.claude/guides/tools/vite.md` |
 | Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
 | Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
