@@ -64,7 +64,7 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, React, Vite, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, TypeScript, React, ESLint, Vite, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
@@ -140,8 +140,10 @@ only when `settings.json` does not already carry them:
     dotnet.md                    .NET conventions (test gate, warnings as errors)
     dotnet-gotchas.md            .NET traps that fail silently
     dotnet-ef-core.md            Entity Framework Core traps
-    react.md                     ESLint rules, render-loop guards
+    typescript.md                strict config, type-check gate, runtime validation
+    react.md                     React lint plugins, render-loop guards, keys, XSS
   tools/                         read when the project uses that tool
+    eslint.md                    flat config baseline, zero warnings, typed linting
     vite.md                      chunk grouping and size budget
     child-processes.md           pipe and kill traps, any language
     ffmpeg.md                    ffmpeg/ffprobe traps (duration, option order)
@@ -294,7 +296,7 @@ you cut something:
 - Each rule in `agent-working-rules.md` and `dotnet-gotchas.md` carries a note of
   what it cost when it was learned. A rule that looks like fussiness usually has
   a broken build behind it.
-- `react.md` and `vite.md` are version-sensitive and say so at the top. The pinned versions
+- `react.md`, `eslint.md` and `vite.md` are version-sensitive and say so at the top. The pinned versions
   expire; the reasoning does not.
 
 ## Uninstalling and rolling back
