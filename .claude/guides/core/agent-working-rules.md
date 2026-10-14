@@ -2,6 +2,8 @@
 
 Project-agnostic. Each rule earned its place by costing something; the cost is recorded so a later
 reader can judge whether it still applies instead of deleting a rule that looks like fussiness.
+A rule marked *Why* instead of *Cost* is preventive: no incident is recorded yet, only the failure
+it stops. When one happens, replace the *Why* line with its *Cost*.
 
 ## 1. Verification
 
@@ -9,6 +11,8 @@ reader can judge whether it still applies instead of deleting a rule that looks 
   *Cost: a lint error reached the main branch and broke CI; twice in one session, same cause.*
 - **`cd x && <edit> && <test>` is the same trap by another route.** When the shell is already in `x`, `cd x` fails, `&&` short-circuits, the edit never happens — and the test still runs against the previous state and reports green. Use absolute paths, or separate the steps.
 - **Never claim a gate is green without having run it in that state.** Re-run after the last edit, not before it.
+- **Report what did not run.** Name every gate not run, every step skipped and every check that could not be done here. Never write "should work" about code that was not run.
+  *Why: a summary that reads as done is acted on as done; the skipped step surfaces later, in someone else's run.*
 - **Prove a test fails without its fix.** Remove the guard or revert the fix, re-run, confirm red, restore. A test that cannot fail is not coverage.
   *Cost: a concurrency test passed with the guard removed — the in-memory database serialized every command, so there was no seam to interleave.*
 
@@ -23,6 +27,8 @@ reader can judge whether it still applies instead of deleting a rule that looks 
 - **One reviewer per diff.** If a specialist review already covers the change, do not also launch a general review pass over the same files.
 - **Never review a tree that is still being edited.** The review snapshots the files, goes stale immediately, and its findings arrive already fixed.
 - **`tail -f` is wrong for a one-shot outcome.** It never exits, so the watcher stays armed until timeout, long after the awaited line appeared. For "tell me when X finishes", poll: `until grep -q PATTERN file; do sleep 2; done`. Reserve a streaming follow for genuinely repeating events.
+- **Stop what you started.** Before finishing, stop every dev server, watcher or background job you started, unless the user asked for it to keep running and knows how to stop it. Never leave a port bound.
+  *Why: a forgotten server holds the port, and the next run fails with "address in use" or, worse, talks to the stale build.*
 - **Do not idle-wait on work that reports back by itself.** Background jobs and subagents announce their own completion.
 - **Know the subagent cache TTL before you wait on one.** Subagent prompt caches live 5 minutes by default. `install.sh` sets `subagentPromptCacheTtl` to `1h`, but `1h` is silently ignored while a Claude subscription is in overage. Without that setting, or when in doubt, assume 5 minutes. Once a subagent is idle past its TTL, its next request pays for its whole history again.
 - **A subagent never waits past its TTL in one command:** at most 4 minutes on a 5-minute cache, 55 minutes on a 1-hour cache. Poll in short chunks (`until <check>; do sleep 30; done` with a bounded loop count, or repeated short checks) instead of one long `sleep` or one long blocking call.
@@ -51,6 +57,10 @@ reader can judge whether it still applies instead of deleting a rule that looks 
 
 - **No lint-disable comments without approval.** When a rule fires, fix the cause. If a disable is genuinely needed, ask first (via `AskUserQuestion`) — naming the rule, the line and why a real fix is not feasible — and, once approved, put the reason in a comment directly above it. Disables accumulate as debt and hide real problems.
 - **Compiler and linter warnings are errors.** A build with warnings is not a clean build.
+- **Change only what was asked.** No drive-by refactors, renames or reformatting outside the task. Problems noticed on the way are reported, not fixed.
+  *Why: unrequested changes hide the real change in review and break things nobody asked to touch.*
+- **No swallowed errors.** No empty `catch`/`except`, no catch that only returns a default. Log with enough context to find the cause, or rethrow.
+  *Why: a swallowed error turns a crash with a stack trace into wrong output with no trace.*
 - **No magic numbers or strings.** Any literal that is not self-evident becomes a named constant; shared ones are exported from one place.
 
 ## 8. Decisions and memory
@@ -58,6 +68,17 @@ reader can judge whether it still applies instead of deleting a rule that looks 
 - **Record architectural decisions where the code lives.** After a commit that lands a real architectural choice, write an ADR (`~/.claude/guides/core/docs-folder.md`, template `~/.claude/templates/adr-template.md`). Skip trivial, cosmetic and cleanup commits. Rationale kept only in commit messages is rationale nobody finds.
 - **One fact per memory file, with an index of pointers.** Never inline content into the index, and leave no file the index does not reference.
 - **Memory is context, not truth.** Verify anything a stored note claims about the code against the code before acting on it.
+
+## 9. Safety
+
+- **Secrets never leave their store.** Never print, log, commit or paste keys, tokens, passwords or connection strings. Add `.env` (and similar) to `.gitignore` before the first commit, and read `git diff --cached` for secrets before every commit.
+  *Why: a pushed secret is public at once, and removing it from history does not un-leak it; it has to be rotated.*
+- **Look before destroying.** Before `rm -rf`, `git reset --hard`, `git clean`, `git push --force`, a branch delete, or a database drop or migration outside a local database: look at the target, then confirm with the user. Use `git push --force-with-lease`, never plain `--force`.
+  *Why: these cannot be undone, and the wrong path or branch is one typo away.*
+- **Never edit an applied migration.** A migration that has run anywhere outside your machine is history: add a new migration instead.
+  *Why: databases that already ran the old version never run the edited one, so schemas drift apart silently.*
+- **Dependencies are a decision.** Add one only with a stated reason, commit the lockfile with it, and never upgrade a major version as a side effect of another task. Never hand-edit lockfiles or generated files; regenerate them with their tool.
+  *Why: an unreviewed dependency is someone else's code running in the project; a hand-edited lockfile no longer matches what the tool installs.*
 
 ## Appendices
 

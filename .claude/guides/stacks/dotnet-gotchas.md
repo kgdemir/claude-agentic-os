@@ -3,7 +3,7 @@
 Appendix to `~/.claude/guides/core/agent-working-rules.md` and `~/.claude/guides/stacks/dotnet.md`. Everything here was hit in real code, not
 read in a guide. Each one is silent or misleading in some way — that is why it is written down.
 EF Core has its own guide (`~/.claude/guides/stacks/dotnet-ef-core.md`); traps that are not .NET-specific live in
-`tools/` (`child-processes.md`, `ffmpeg.md`).
+`~/.claude/guides/tools/child-processes.md` and `~/.claude/guides/tools/ffmpeg.md`.
 
 ## Configuration
 

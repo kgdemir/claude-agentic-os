@@ -17,7 +17,7 @@
 
 Detailed rules live in `~/.claude/guides/`. These apply to every project.
 
-- Agent working rules (verification, diagnosis, background work, git, code quality, memory): @~/.claude/guides/core/agent-working-rules.md
+- Agent working rules (verification, diagnosis, background work, git, code quality, memory, safety): @~/.claude/guides/core/agent-working-rules.md
 - Build/test/deploy via `tools/` scripts: @~/.claude/guides/core/project-tools.md
 - Project `CLAUDE.md` (template `~/.claude/templates/project-claude-template.md`): @~/.claude/guides/core/project-claude-md.md
 - `README.md`, `capabilities.md`, `SECURITY.md`: @~/.claude/guides/core/project-docs.md
