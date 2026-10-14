@@ -8,6 +8,12 @@ is silent: the code runs, and the data is wrong or the save fails later.
 - **`SaveChanges` saves everything the context tracks,** not just the change you had in mind. A "small status write" through a context that already holds unsaved modifications commits those too.
 - **After a failed `SaveChanges`, that context is not a good place to write from.** The failed changes are still pending, so the next save retries them and fails the same way. Error handling that records a failure should use a fresh scope.
 - **A background worker needs a scope per unit of work.** Resolve scoped services (a `DbContext`, repositories) from `IServiceScopeFactory` inside the loop, never from the scope that queued the work — that one may be a request or hub invocation that ended long ago.
+- **Never `SaveChanges` again from inside that context's own interceptor or `SavedChanges` handler.** Write audit or change-log rows through a separate context, or with `ExecuteSql` / raw SQL that bypasses the change tracker.
+  *Cost: an audit interceptor that added rows and saved re-entrantly on the same context reordered inserts on a fresh database and violated a foreign key on the very first write.*
+- **Every migration is applied to an empty database before it ships** (`dotnet ef database update` against a fresh container), not only to the developer's existing one.
+  *Cost: a migration held only `AlterColumn` for a column no migration ever created; existing databases were fine and every fresh install failed with "column does not exist".*
+- **An empty generated migration is a bug, not a no-op.** If `migrations add` produces nothing after a model change, the entity is not registered (no `DbSet`, no configuration): fix the model, then regenerate.
+  *Cost: generated entities without a `DbSet` made `dotnet ef migrations add` silently produce empty migrations.*
 
 Preventive rules (no incident recorded here yet; each names the failure it stops):
 

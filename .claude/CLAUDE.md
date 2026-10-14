@@ -34,15 +34,25 @@ with the Read tool before working on that part, and follow it.
 | --- | --- |
 | .NET project (`*.csproj`, `*.sln`) | `~/.claude/guides/stacks/dotnet.md`, `~/.claude/guides/stacks/dotnet-gotchas.md` |
 | .NET project using Entity Framework Core | `~/.claude/guides/stacks/dotnet-ef-core.md` |
+| ASP.NET Core web app or API (`Microsoft.NET.Sdk.Web`) | `~/.claude/guides/stacks/aspnet-core.md` |
+| .NET test project (xUnit, NUnit, MSTest) | `~/.claude/guides/stacks/dotnet-testing.md` |
+| WinForms, WPF, WebView2 or VSIX project | `~/.claude/guides/stacks/windows-desktop.md` |
+| Python project (`pyproject.toml`, `requirements*.txt`) | `~/.claude/guides/stacks/python.md` |
 | TypeScript project (`tsconfig.json`) | `~/.claude/guides/stacks/typescript.md` |
 | React project | `~/.claude/guides/stacks/react.md` |
 | Project linted with ESLint | `~/.claude/guides/tools/eslint.md` |
+| Front-end tests (Vitest, Jest, Testing Library, Playwright) | `~/.claude/guides/stacks/frontend-testing.md` |
+| Project uses SQL Server | `~/.claude/guides/tools/sql-server.md` |
+| `Dockerfile` or Compose file present | `~/.claude/guides/tools/docker.md` |
+| Project uses Redis | `~/.claude/guides/tools/redis.md` |
 | Project built with Vite | `~/.claude/guides/tools/vite.md` |
 | Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
 | Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
 | Project exports Markdown to PDF | `~/.claude/guides/tools/pdf-export.md` |
 | Realtime messaging or live audio/video (WebSocket, SignalR, WebRTC, SFU) | `~/.claude/guides/features/realtime-media.md` |
 | Project ships or calls an AI/ML model | `~/.claude/guides/features/ai-models.md` |
+| Login, tokens, sessions, LDAP, or fetching user-supplied URLs | `~/.claude/guides/features/auth.md` |
+| Logging beyond the console, tracing or metrics | `~/.claude/guides/features/observability.md` |
 | caveman plugin active (`CAVEMAN MODE` at session start) | `~/.claude/guides/plugins/caveman.md` |
 | context-mode tools (`ctx_*`) available | `~/.claude/guides/plugins/context-mode.md` |
 | memsearch plugin installed | `~/.claude/guides/plugins/memsearch.md` |

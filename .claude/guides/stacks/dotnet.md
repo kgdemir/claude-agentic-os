@@ -20,6 +20,8 @@
   *Why: an invalid value otherwise surfaces mid-run, where the first code to read it fails (see the `PeriodicTimer` trap in `~/.claude/guides/stacks/dotnet-gotchas.md`).*
 - **Structured logging:** message templates with named holes (`LogInformation("Order {OrderId} shipped", id)`), never string interpolation. Never log secrets, tokens or connection strings.
   *Why: an interpolated message loses its fields for search and allocates even when the level is off.*
+- **A vulnerable transitive package is pinned to a patched version** with a direct `PackageReference` (or a central `PackageVersion`), citing the advisory in the commit; never silence `NU1901`–`NU1904`.
+  *Cost: Swashbuckle pulled a transitive `Microsoft.OpenApi` with a high-severity advisory, and restore failed under warnings-as-errors (`NU1903`) until the patched version was pinned explicitly.*
 - **Package versions live in one place:** `Directory.Packages.props` with `ManagePackageVersionsCentrally`, next to `Directory.Build.props`.
   *Why: per-project versions drift, and two projects in one solution end up loading different versions of the same package.*
 - Known traps (config binding, channels, localized build output): `~/.claude/guides/stacks/dotnet-gotchas.md`. EF Core: `~/.claude/guides/stacks/dotnet-ef-core.md`. Child processes and ffmpeg: `~/.claude/guides/tools/child-processes.md`, `~/.claude/guides/tools/ffmpeg.md`.

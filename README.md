@@ -65,7 +65,7 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, TypeScript, React, ESLint, Vite, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, auth, observability, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
@@ -142,6 +142,11 @@ only when `settings.json` does not already carry them:
                                  async, HttpClient, options, logging, packages)
     dotnet-gotchas.md            .NET traps that fail silently
     dotnet-ef-core.md            EF Core traps, tracking, N+1, migrations, raw SQL
+    dotnet-testing.md            real database in tests, cross-OS fakes, mocks
+    aspnet-core.md               antiforgery, CORS on errors, idempotency, deploy config
+    windows-desktop.md           WinForms/WPF/WebView2: UI thread, runtime, Linux builds
+    python.md                    venv, pinned deps, ruff/pytest, timeouts, python -I
+    frontend-testing.md          Node parity in CI, scoped jsdom, role queries
     typescript.md                strict config, type-check gate, runtime validation
     react.md                     React lint plugins, render-loop guards, keys, XSS
   tools/                         read when the project uses that tool
@@ -150,9 +155,14 @@ only when `settings.json` does not already carry them:
     child-processes.md           pipe and kill traps, any language
     ffmpeg.md                    ffmpeg/ffprobe traps (duration, option order)
     pdf-export.md                Markdown-to-PDF build and checks (always A4)
+    sql-server.md                collations, parameters, certificates, transactions
+    docker.md                    buildable Dockerfiles, pinned tags, no secrets, healthchecks
+    redis.md                     honest fallback, one connection, TTLs, no KEYS
   features/                      read when the project has that feature
-    realtime-media.md            WebSocket, SignalR, WebRTC, SFU: what to document
-    ai-models.md                 shipped vs proof-of-concept models
+    realtime-media.md            WebSocket, SignalR, WebRTC, SFU: docs and hub rules
+    ai-models.md                 model docs, output coverage, timeouts, GPU pins
+    auth.md                      SSRF on every hop, JWT, rate limits, LDAP, cookies
+    observability.md             tokens out of logs, log injection, error routing
   plugins/                       read when that plugin is active
     caveman.md                   terse reply style
     context-mode.md              sandboxed tool output
