@@ -13,7 +13,7 @@ Code rules:
 - **Filter model inventions before using output:** drop segments below a confidence threshold (`avg_logprob`), known filler/outro phrases, and one word repeated many times; keep digital silence out of noise estimates.
   *Cost: Whisper produced invented phrases on noise and silence until low-confidence segments and repeat loops were filtered.*
 - **Deploys to a model host never overwrite its live config** (exclude config files from `rsync --delete`).
-  *Cost: every publish to the GPU box replaced its hand-tuned config with the repo's, while the script said it kept it.*
+  *Cost: same incident as the deploy rule in `~/.claude/guides/stacks/aspnet-core.md`.*
 - **API calls have a timeout, bounded retries with backoff, and a spend limit;** API keys come from environment or a secret store only.
   *Why: a hung or retry-looping model call blocks workers and can run up a large bill.*
 - **GPU/CUDA libraries are pinned together** with the runtime they were tested on (CUDA, cuDNN, driver minimum).

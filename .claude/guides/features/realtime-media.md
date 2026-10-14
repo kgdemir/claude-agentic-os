@@ -21,6 +21,6 @@ Code rules (SignalR, WebSocket hubs, SFU signaling):
 - **Rate-limit per-user state changes that write history or fan out** (e.g. 30 per 10 s), refuse starts before any SFU resource is created, and log one warning per window.
   *Cost: a client toggling media in a loop could fill the history writer's queue, dropping other users' rows.*
 - **Client logging is set explicitly for every connection builder** (Warning in production); see `~/.claude/guides/features/observability.md` for tokens in negotiate URLs.
-  *Cost: builders left at the default level printed live JWTs to the browser console.*
+  *Cost: same incident as the token rule in `~/.claude/guides/features/observability.md`.*
 - **Every hub method checks that the caller may act on the target** (member of the room, party to the call), not only that they are signed in.
   *Why: a signed-in user can call any hub method with any id.*
