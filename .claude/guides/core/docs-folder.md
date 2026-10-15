@@ -13,6 +13,13 @@ Every project has `docs/` with `docs/adr/` and `docs/user-guides/`. Missing: cre
 - Keep `docs/adr/README.md` index: number, title, status, date, one line per ADR.
 - Code, `capabilities.md`, `README.md` cite ADRs as `(ADR-NNNN)` where the decision applies.
 
+## docs/architecture.md (C4 model)
+
+- Projects with more than one container (separately running app, service, database, queue or file store) keep `docs/architecture.md` from `~/.claude/templates/architecture-template.md`: system context and container diagrams (C4 levels 1 and 2) in Mermaid, then key flows, deployment and cross-cutting concerns. Component and code levels only when a container is too big to follow without them.
+- It shows structure; ADRs record why. Link the ADR behind each container or boundary instead of repeating its reasoning.
+- It changes on request like the other docs (`~/.claude/guides/core/docs-updates.md`): after a change that adds, removes or rewires a container, name it as needing an update.
+  *Why: a README architecture table lists parts but not how they talk; without one diagram of containers and protocols, each new reader rebuilds it from the code.*
+
 ## docs/user-guides/ (end-user guide)
 
 - Written for end users, not developers: task-oriented, step by step, UI language of the product, screenshots in `images/`.

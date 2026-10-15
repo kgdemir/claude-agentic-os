@@ -65,7 +65,7 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, auth, observability, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
@@ -136,7 +136,8 @@ only when `settings.json` does not already carry them:
     project-claude-md.md         each project keeps its own CLAUDE.md
     project-docs.md              README.md, capabilities.md, SECURITY.md
     docs-updates.md              docs change on request; baseline marker
-    docs-folder.md               docs/adr/ and docs/user-guides/ layout
+    docs-folder.md               docs/adr/, docs/architecture.md (C4) and
+                                 docs/user-guides/ layout
   stacks/                        read when the project uses that stack
     dotnet.md                    .NET conventions (test gate, warnings as errors,
                                  async, HttpClient, options, logging, packages)
@@ -158,11 +159,22 @@ only when `settings.json` does not already carry them:
     sql-server.md                collations, parameters, certificates, transactions
     docker.md                    buildable Dockerfiles, pinned tags, no secrets, healthchecks
     redis.md                     honest fallback, one connection, TTLs, no KEYS
+    github-actions.md            SHA-pinned actions, least privilege, no script injection
+    dependency-updates.md        Dependabot/Renovate grouping, majors one at a time
   features/                      read when the project has that feature
     realtime-media.md            WebSocket, SignalR, WebRTC, SFU: docs and hub rules
     ai-models.md                 model docs, output coverage, timeouts, GPU pins
     auth.md                      SSRF on every hop, JWT, rate limits, LDAP, cookies
     observability.md             tokens out of logs, log injection, error routing
+    architecture.md              inward dependencies, feature folders, enforced boundaries
+    api-design.md                OpenAPI contract, breaking-change check, pagination
+    background-jobs.md           outbox, idempotent consumers, dead letters, single run
+    resilience.md                timeouts, safe retries, breakers, liveness vs readiness
+    database-migrations.md       expand/contract, batched backfills, UTC, online indexes
+    i18n.md                      invariant vs user culture, Turkish-I, UTC, resources
+    accessibility.md             WCAG 2.2 AA: names, keyboard, focus, contrast, axe
+    web-security.md              HSTS, CSP, headers, CORS, uploads, OWASP Top 10
+    releases.md                  Conventional Commits, SemVer, Keep a Changelog
   plugins/                       read when that plugin is active
     caveman.md                   terse reply style
     context-mode.md              sandboxed tool output
@@ -171,6 +183,7 @@ only when `settings.json` does not already carry them:
     project-location.md          every project under --project-root
 ~/.claude/templates/
   adr-template.md                architecture decision record
+  architecture-template.md       C4 context and container diagrams (Mermaid)
   project-claude-template.md     starting point for a project CLAUDE.md
 ~/.claude/bin/
   runclaude                      optional launcher (only with --with-launcher)

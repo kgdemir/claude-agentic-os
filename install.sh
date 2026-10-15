@@ -249,7 +249,9 @@ for OLD in agent-working-rules project-tools project-claude-md project-docs \
   fi
 done
 
-LEFTOVER="$(grep -rl '{{' "$DEST" --include='*.md' 2>/dev/null || true)"
+# Placeholders are always {{UPPER_CASE}}; guides may quote other {{ }} syntax
+# (GitHub Actions ${{ github.ref }}), which must not count as a leftover.
+LEFTOVER="$(grep -rlE '\{\{[A-Z_]+\}\}' "$DEST" --include='*.md' 2>/dev/null || true)"
 if [ -n "$LEFTOVER" ]; then
   echo "!! Placeholders left unsubstituted in:" >&2
   printf '   %s\n' $LEFTOVER >&2
