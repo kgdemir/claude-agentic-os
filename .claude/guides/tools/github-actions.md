@@ -12,7 +12,12 @@ Applies to repositories with `.github/workflows/`.
   *Why: `${{ }}` is pasted into the script before the shell runs, so a crafted title becomes shell commands (script injection).*
 - **No `pull_request_target` that checks out or runs the PR's code.**
   *Why: that trigger runs with repository secrets and a write token; running fork code under it hands both to the fork author.*
-- **Cancel superseded runs and bound every job:** `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }` for PR workflows, and `timeout-minutes` on each job.
+- **Cancel superseded runs and bound every job:** a `concurrency` block for PR workflows, and `timeout-minutes` on each job. Block style, because a one-line `{ … }` mapping breaks on the braces in `${{`:
+  ```yaml
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+  ```
   *Why: the default job timeout is 6 hours; a hung step burns runner minutes and blocks the queue.*
 - **Secrets come from repository or environment secrets, or OIDC** (`id-token: write` with a cloud role) instead of long-lived cloud keys. Deploy jobs use a protected `environment:` with required reviewers.
   *Why: a long-lived key in secrets is one leak away from permanent access; OIDC tokens expire in minutes.*

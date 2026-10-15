@@ -45,6 +45,8 @@ with the Read tool before working on that part, and follow it.
 | Project uses SQL Server | `~/.claude/guides/tools/sql-server.md` |
 | `Dockerfile` or Compose file present | `~/.claude/guides/tools/docker.md` |
 | Project uses Redis | `~/.claude/guides/tools/redis.md` |
+| `.github/workflows/` present | `~/.claude/guides/tools/github-actions.md` |
+| Project has package dependencies and a remote repository | `~/.claude/guides/tools/dependency-updates.md` |
 | Project built with Vite | `~/.claude/guides/tools/vite.md` |
 | Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
 | Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
@@ -62,8 +64,6 @@ with the Read tool before working on that part, and follow it.
 | Project has a web or desktop UI | `~/.claude/guides/features/accessibility.md` |
 | Project serves HTML or an API called from a browser | `~/.claude/guides/features/web-security.md` |
 | Project tags releases, publishes packages or images, or keeps `CHANGELOG.md` | `~/.claude/guides/features/releases.md` |
-| `.github/workflows/` present | `~/.claude/guides/tools/github-actions.md` |
-| Project has package dependencies and a remote repository | `~/.claude/guides/tools/dependency-updates.md` |
 | caveman plugin active (`CAVEMAN MODE` at session start) | `~/.claude/guides/plugins/caveman.md` |
 | context-mode tools (`ctx_*`) available | `~/.claude/guides/plugins/context-mode.md` |
 | memsearch plugin installed | `~/.claude/guides/plugins/memsearch.md` |
