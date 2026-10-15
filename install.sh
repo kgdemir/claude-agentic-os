@@ -147,7 +147,9 @@ fi
 [ -n "$GH_LOGIN" ] || echo "==> GitHub:  not signed in (gh auth login) — will ask"
 
 ask() { # ask <prompt> <default> -> echoes the answer
-  local prompt="$1" default="$2" answer=""
+  local prompt="$1"
+  local default="$2"
+  local answer=""
   if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
     printf '%s\n' "$default"
     return
@@ -845,7 +847,9 @@ fi
 # from another path) replaces exactly the entry it wrote before and never
 # touches a hook of yours that happens to share a name.
 install_hook() { # install_hook <script name> <matcher> <label>
-  local name="$1" matcher="$2" label="$3"
+  local name="$1"
+  local matcher="$2"
+  local label="$3"
   local HOOK_PATH="$DEST/hooks/$name"
   if [ -e "$HOOK_PATH" ] && ! cmp -s "$SRC_DIR/.claude/hooks/$name" "$HOOK_PATH"; then
     cp -p "$HOOK_PATH" "$HOOK_PATH.backup-$STAMP"
