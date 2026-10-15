@@ -23,10 +23,8 @@ Applies to `capabilities.md`, `README.md`, `docs/adr/README.md`, `docs/user-guid
    - `docs/architecture.md` — C4 diagrams, when the project has one
    - `docs/adr/README.md` — ADR index; rows must match `docs/adr/*.md` exactly (it goes stale easily)
    - `docs/user-guides/*.md` — end-user guide, plus `PROGRESS.md`
-3. Any guide page change must reach `combined.md`. Links in `combined.md`: rewrite `http://localhost…` and cross-page links to in-document anchors (`#section-anchor`); the PDF has no web server and no sibling files.
-4. Rebuild the PDF **only** when the change reaches the exported guide (a page under `docs/user-guides/` or `combined.md`). A README, ADR or `capabilities.md` change is not in the PDF: edit and stop.
-   - How to build and verify the PDF (A4, converter quirks, anchor check): `~/.claude/guides/tools/pdf-export.md`.
-5. Bump the baseline hash in `capabilities.md` to the new `HEAD`.
+3. A change that reaches a guide page: `combined.md`, its links and the PDF rebuild follow `~/.claude/guides/features/user-guide.md`. A README, ADR or `capabilities.md` change is not in the PDF: edit and stop.
+4. Bump the baseline hash in `capabilities.md` to the new `HEAD`.
 
 ## Never commit a baseline-only bump
 

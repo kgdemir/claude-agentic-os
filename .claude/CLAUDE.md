@@ -55,6 +55,11 @@ with the Read tool before working on that part, and follow it.
 | Project ships or calls an AI/ML model | `~/.claude/guides/features/ai-models.md` |
 | Login, tokens, sessions, LDAP, or fetching user-supplied URLs | `~/.claude/guides/features/auth.md` |
 | Logging beyond the console, tracing or metrics | `~/.claude/guides/features/observability.md` |
+| Project has or creates `docs/user-guides/` (end-user guide) | `~/.claude/guides/features/user-guide.md` |
+| Project stores or processes personal data (names, contacts, ids, location, health, payment) | `~/.claude/guides/features/privacy.md` |
+| Project has tests, or a task adds or changes them | `~/.claude/guides/features/testing-strategy.md` |
+| Task about speed, memory, load or bundle size, or a launch expecting real traffic | `~/.claude/guides/features/performance.md` |
+| HTTP caching, in-memory or distributed caches | `~/.claude/guides/features/caching.md` |
 | Adding or restructuring modules, layers or projects | `~/.claude/guides/features/architecture.md` |
 | Project exposes an HTTP API (REST, OpenAPI) | `~/.claude/guides/features/api-design.md` |
 | Queues, message brokers, scheduled or background jobs | `~/.claude/guides/features/background-jobs.md` |

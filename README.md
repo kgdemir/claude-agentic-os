@@ -65,11 +65,12 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
-| **Templates** | an ADR template and a project `CLAUDE.md` template |
+| **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
+| **Hooks** (warn-only) | remind Claude, never block: subagent briefs without `Goal:`/`Files:`/`Done:`, and shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff) |
 | **Launcher** (optional) | `runclaude <project>` — installs missing tooling, prepares the venv, fast-forwards a clean default branch, opens Claude |
 
 ## Install
@@ -104,6 +105,7 @@ Non-interactive:
 | `--with-plugins` / `--no-plugins` | Install the plugin set, or skip the question |
 | `--install-deps` / `--no-deps` | Install every missing tool (`python3`, `claude`, `jq`, `npm`, …) without asking, or never |
 | `-y`, `--yes` | Accept every detected default, ask nothing |
+| `--prune-backups <N>` | Only clean up: keep the newest N `.backup-<timestamp>` sets in the pack's folders, list the rest and delete them after you type `yes`; never with `-y` or without a terminal; installs nothing |
 
 The installer refuses rather than writing a blank if a required detail is
 missing and it cannot ask — for example in a pipeline with no `gh` session.
@@ -136,8 +138,7 @@ only when `settings.json` does not already carry them:
     project-claude-md.md         each project keeps its own CLAUDE.md
     project-docs.md              README.md, capabilities.md, SECURITY.md
     docs-updates.md              docs change on request; baseline marker
-    docs-folder.md               docs/adr/, docs/architecture.md (C4) and
-                                 docs/user-guides/ layout
+    docs-folder.md               docs/adr/ and docs/architecture.md (C4)
   stacks/                        read when the project uses that stack
     dotnet.md                    .NET conventions (test gate, warnings as errors,
                                  async, HttpClient, options, logging, packages)
@@ -175,6 +176,11 @@ only when `settings.json` does not already carry them:
     accessibility.md             WCAG 2.2 AA: names, keyboard, focus, contrast, axe
     web-security.md              HSTS, CSP, headers, CORS, uploads, OWASP Top 10
     releases.md                  Conventional Commits, SemVer, Keep a Changelog
+    privacy.md                   personal data: minimise, retention, erasure, no PII in logs
+    testing-strategy.md          test pyramid, real dependencies, flaky tests, coverage
+    performance.md               measure first, budgets, percentiles, profiling, load tests
+    caching.md                   TTLs, keys, private responses, stampede, fallback
+    user-guide.md                docs/user-guides/ pages, combined.md and the PDF
   plugins/                       read when that plugin is active
     caveman.md                   terse reply style
     context-mode.md              sandboxed tool output
@@ -193,6 +199,10 @@ only when `settings.json` does not already carry them:
                                  Goal:/Files:/Done: lines
                                  (Explore, claude-code-guide, statusline-setup
                                  and forks exempt); needs python3
+  check-bash-command.py          PreToolUse hook on Bash: warns (never blocks)
+                                 when a command breaks a core rule; on
+                                 git commit it scans the staged diff and names
+                                 only the file and kind of a likely secret
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)
 ~/.claude/settings.json          merged, never overwritten; backed up first
 ```
@@ -327,7 +337,8 @@ you cut something:
 ## Uninstalling and rolling back
 
 Every file the installer replaces is kept as `<name>.backup-<timestamp>` in the
-same directory, `settings.json` included. Guides from the old flat layout
+same directory, `settings.json` included; a file whose content would not change
+is left alone and not backed up. Guides from the old flat layout
 (`~/.claude/guides/<name>.md`) are moved aside the same way. To undo a run, move
 the backups back.
 To drop the plugins: `claude plugin uninstall <plugin>@<marketplace>` and
@@ -335,6 +346,8 @@ To drop the plugins: `claude plugin uninstall <plugin>@<marketplace>` and
 `~/.claude/CLAUDE.md`, `~/.claude/guides/` and `~/.claude/templates/`. To unwire
 the launcher, delete the block between the `# >>> claude rules pack` and
 `# <<< claude rules pack` markers in your shell rc.
+Old backups pile up over many runs; `./install.sh --prune-backups 3` keeps the
+newest three sets and asks before deleting the rest.
 
 ## Security
 
@@ -343,6 +356,16 @@ installer, add third-party plugin marketplaces with auto-update on, touch your
 shell rc and set your global git identity — each after asking.
 [SECURITY.md](SECURITY.md) lists exactly what it can and cannot do, and how to
 report a problem.
+
+## Working on the pack
+
+| Command | What it does |
+| --- | --- |
+| `tools/check.sh` | every gate before a commit; CI (`.github/workflows/ci.yml`) runs the same script |
+| `tools/test-hooks.sh` | feeds sample events to both hooks; each warn case has a no-warn twin |
+| `tools/check-guides.sh` | each add-on rule has a `*Cost:*`/`*Why:*` line, pack paths resolve, each add-on has a trigger row, YAML blocks parse, no project name from the local `tools/leak-names.local` appears |
+| `tools/check-values.sh` | settings values quoted in the docs match `install.sh` |
+| `tools/sync-live.sh [--dry-run]` | copies changed rules, templates and hooks into your live `~/.claude` with backups, using your install answers from the gitignored `tools/sync-live.local`; never edits `settings.json` and reports hooks still to register with `./install.sh` |
 
 ## Contributing
 

@@ -1,0 +1,19 @@
+# Older rules that predate the Cost/Why convention (ADR-0008). One per line:
+# <path under .claude/guides/>|<bold rule text>. Remove a line once its rule
+# gains a *Cost:* or *Why:* line; never add one for a new rule.
+stacks/dotnet-ef-core.md|A read-modify-write is not a claim.
+stacks/dotnet-ef-core.md|`ExecuteUpdate` and tracked entities disagree.
+stacks/dotnet-ef-core.md|`SaveChanges` saves everything the context tracks,
+stacks/dotnet-ef-core.md|After a failed `SaveChanges`, that context is not a good place to write from.
+stacks/dotnet-ef-core.md|A background worker needs a scope per unit of work.
+stacks/dotnet-gotchas.md|No `//` comment keys under `Logging:LogLevel`.
+stacks/dotnet-gotchas.md|A zero or negative interval from configuration throws.
+stacks/dotnet-gotchas.md|A `SingleReader` channel cannot count.
+stacks/dotnet-gotchas.md|Warnings are errors.
+stacks/dotnet-gotchas.md|A solution build can fail for a project you do not care about.
+stacks/dotnet-gotchas.md|The build's language follows the system locale.
+tools/child-processes.md|Drain both pipes.
+tools/child-processes.md|Kill in `finally`.
+tools/ffmpeg.md|Media duration: read the packets, not the header.
+tools/ffmpeg.md|Put global ffmpeg options before `-i`.
+tools/vite.md|Always

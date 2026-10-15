@@ -1,7 +1,7 @@
 # PDF export (Markdown to PDF)
 
 Applies whenever a project exports Markdown to PDF (for example `docs/user-guides/combined.pdf`,
-see `~/.claude/guides/core/docs-updates.md` for *when* to rebuild). This file is *how*.
+see `~/.claude/guides/features/user-guide.md` for *when* to rebuild). This file is *how*.
 
 - Rebuild only through the project's `tools/` guide script, never a hand-typed converter command. Put every converter quirk (env vars, stdin redirect, browser path) into that script.
 - Page size is always **A4** (≈`595 x 842 pts`; Chrome gives `594.96 x 841.92`, md-to-pdf `595.92 x 841.92` — both A4). Set it in the guide script (e.g. CSS `@page { size: A4; }` or the converter's A4 option), never rely on the tool default (often Letter).

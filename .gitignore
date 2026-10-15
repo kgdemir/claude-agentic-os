@@ -7,3 +7,6 @@
 
 # Local memsearch memory database
 .memsearch/
+
+# Per-person local config for tools/ scripts
+tools/*.local

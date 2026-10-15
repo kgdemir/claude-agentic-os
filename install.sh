@@ -19,6 +19,7 @@ WITH_STATUSLINE=""
 WITH_PLUGINS=""
 INSTALL_DEPS=""
 ASSUME_YES=""
+PRUNE_KEEP=""
 
 usage() {
   cat >&2 <<'USAGE'
@@ -41,6 +42,9 @@ usage: ./install.sh [options]
   --no-plugins           Skip the plugins without asking
   --install-deps         Install missing statusline tools without asking
   --no-deps              Never install tools; just report what is missing
+  --prune-backups <N>    Only clean up: keep the backups of the newest N runs,
+                         list the older ones and delete them after you type yes
+                         (never under -y or without a terminal); installs nothing
   -y, --yes              Accept every detected default, ask nothing
   -h, --help             This text
 USAGE
@@ -64,6 +68,7 @@ while [ $# -gt 0 ]; do
     --no-statusline) WITH_STATUSLINE=no; shift ;;
     --install-deps) INSTALL_DEPS=yes; shift ;;
     --no-deps) INSTALL_DEPS=no; shift ;;
+    --prune-backups) PRUNE_KEEP="${2:-}"; shift 2 ;;
     -y|--yes) ASSUME_YES=yes; shift ;;
     -h|--help) usage ;;
     *) echo "unknown option: $1" >&2; usage ;;
@@ -162,6 +167,52 @@ ask_change() { # ask_change <prompt> -> echoes yes or no
   ask "$1" 'yes'
 }
 
+# ------------------------------------------------------------ prune backups
+
+# Every run backs up what it replaces as <file>.backup-<STAMP>, and nothing else
+# ever removes them (ADR-0002). --prune-backups is the one deleting path: it
+# touches only files the installer itself writes, keeps the newest N run stamps,
+# and deletes only after an explicit "yes" typed in a terminal (ADR-0010).
+if [ -n "$PRUNE_KEEP" ]; then
+  case "$PRUNE_KEEP" in
+    ''|*[!0-9]*|0) echo "!! --prune-backups needs a whole number of runs to keep, 1 or more" >&2; exit 2 ;;
+  esac
+  BACKUP_LIST="$(
+    { find "$DEST" -maxdepth 1 -type f -name '*.backup-*'
+      for d in guides templates hooks bin; do
+        [ -d "$DEST/$d" ] && find "$DEST/$d" -type f -name '*.backup-*'
+      done
+    } | grep -E '\.backup-[0-9]{8}-[0-9]{6}$' | sort || true
+  )"
+  if [ -z "$BACKUP_LIST" ]; then
+    echo "    no installer backups under $DEST"
+    exit 0
+  fi
+  STAMPS="$(printf '%s\n' "$BACKUP_LIST" | sed -E 's/.*\.backup-//' | sort -u)"
+  KEEP_STAMPS="$(printf '%s\n' "$STAMPS" | tail -n "$PRUNE_KEEP")"
+  OLD_FILES="$(printf '%s\n' "$BACKUP_LIST" | grep -v -F -f <(printf '.backup-%s\n' $KEEP_STAMPS) || true)"
+  echo "    runs with backups: $(printf '%s\n' "$STAMPS" | wc -l | tr -d ' '), keeping the newest $PRUNE_KEEP:"
+  printf '      %s\n' $KEEP_STAMPS
+  if [ -z "$OLD_FILES" ]; then
+    echo "    nothing older to delete"
+    exit 0
+  fi
+  echo "    would delete $(printf '%s\n' "$OLD_FILES" | wc -l | tr -d ' ') files:"
+  printf '%s\n' "$OLD_FILES" | sed 's/^/      /'
+  if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
+    echo "    nothing deleted: run it in a terminal without -y to confirm"
+    exit 0
+  fi
+  ANSWER="$(ask 'Type yes to delete these files' 'no')"
+  if [ "$ANSWER" = "yes" ]; then
+    printf '%s\n' "$OLD_FILES" | while IFS= read -r f; do rm -f -- "$f"; done
+    echo "    deleted"
+  else
+    echo "    nothing deleted"
+  fi
+  exit 0
+fi
+
 [ -n "$REPLY_LANGUAGE" ] || REPLY_LANGUAGE="$(ask 'Language Claude should reply in' 'English')"
 [ -n "$OWNER_NAME" ] || OWNER_NAME="$(ask 'Your name (owner/author/ADR decider)' "${GH_NAME:-$(git config --global user.name 2>/dev/null || true)}")"
 [ -n "$OWNER_GITHUB" ] || OWNER_GITHUB="$(ask 'Your GitHub username' "$GH_LOGIN")"
@@ -217,11 +268,8 @@ install_file() { # install_file <relative path>
   local rel="$1"
   local src="$SRC_DIR/$rel"
   local dst="$DEST/${rel#.claude/}"
+  local rendered="$dst.installing-$STAMP"
   mkdir -p "$(dirname "$dst")"
-  if [ -e "$dst" ] && ! cmp -s "$src" "$dst"; then
-    cp -p "$dst" "$dst.backup-$STAMP"
-    echo "    backed up  ${dst}.backup-$STAMP"
-  fi
   # Placeholders are substituted with a here-doc-free sed: values may contain
   # spaces and non-ASCII, never slashes we care about, so | is a safe delimiter.
   sed -e "s|{{REPLY_LANGUAGE}}|$REPLY_LANGUAGE|g" \
@@ -230,7 +278,19 @@ install_file() { # install_file <relative path>
       -e "s|{{OWNER_EMAIL}}|$OWNER_EMAIL|g" \
       -e "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" \
       -e "s|{{PROJECT_LOCATION_IMPORT}}|$PROJECT_LOCATION_IMPORT|g" \
-      "$src" > "$dst"
+      "$src" > "$rendered"
+  # Compare the rendered file, not the template: a template with placeholders
+  # never equals its installed copy, so every re-run used to back it up.
+  if [ -e "$dst" ] && cmp -s "$rendered" "$dst"; then
+    rm -f "$rendered"
+    echo "    unchanged  $dst"
+    return
+  fi
+  if [ -e "$dst" ]; then
+    cp -p "$dst" "$dst.backup-$STAMP"
+    echo "    backed up  ${dst}.backup-$STAMP"
+  fi
+  mv "$rendered" "$dst"
   echo "    installed  $dst"
 }
 
@@ -769,33 +829,39 @@ print("    defaults   " + (", ".join(added) if added else "already set"))
 PY
 fi
 
-# ---------------------------------------------------------------- brief hook
+# --------------------------------------------------------------------- hooks
 
-# Reminds the model (warn-only, never blocks) when an Agent brief lacks
-# Goal:/Files:/Done: lines, so subagents do not stall on follow-up questions
-# while their cache expires. The registered command is recorded next to the
-# script, so a re-run (even from another path) replaces exactly the entry it
-# wrote before and never touches a hook of yours that happens to share a name.
-if command -v python3 >/dev/null 2>&1; then
-  BRIEF_HOOK="$DEST/hooks/check-agent-brief.py"
-  mkdir -p "$DEST/hooks"
-  if [ -e "$BRIEF_HOOK" ] && ! cmp -s "$SRC_DIR/.claude/hooks/check-agent-brief.py" "$BRIEF_HOOK"; then
-    cp -p "$BRIEF_HOOK" "$BRIEF_HOOK.backup-$STAMP"
-    echo "    backed up  $BRIEF_HOOK.backup-$STAMP"
+# Warn-only PreToolUse hooks; none ever blocks a call.
+#   check-agent-brief.py   an Agent brief without Goal:/Files:/Done: lines, so
+#                          subagents do not stall on questions while their
+#                          cache expires (ADR-0006)
+#   check-bash-command.py  a shell command breaking a core rule: git add -A,
+#                          force push, reset --hard, AI attribution, a piped
+#                          gate without pipefail, secrets in the staged diff
+#                          (ADR-0009)
+# Each registered command is recorded next to its script, so a re-run (even
+# from another path) replaces exactly the entry it wrote before and never
+# touches a hook of yours that happens to share a name.
+install_hook() { # install_hook <script name> <matcher> <label>
+  local name="$1" matcher="$2" label="$3"
+  local HOOK_PATH="$DEST/hooks/$name"
+  if [ -e "$HOOK_PATH" ] && ! cmp -s "$SRC_DIR/.claude/hooks/$name" "$HOOK_PATH"; then
+    cp -p "$HOOK_PATH" "$HOOK_PATH.backup-$STAMP"
+    echo "    backed up  $HOOK_PATH.backup-$STAMP"
   fi
-  cp -p "$SRC_DIR/.claude/hooks/check-agent-brief.py" "$BRIEF_HOOK"
-  chmod +x "$BRIEF_HOOK"
-  echo "    installed  $BRIEF_HOOK"
+  cp -p "$SRC_DIR/.claude/hooks/$name" "$HOOK_PATH"
+  chmod +x "$HOOK_PATH"
+  echo "    installed  $HOOK_PATH"
 
-  SETTINGS="$DEST/settings.json"
-  BRIEF_HOOK="$BRIEF_HOOK" BRIEF_HOOK_STATE="$DEST/hooks/check-agent-brief.registered" \
+  HOOK_PATH="$HOOK_PATH" HOOK_STATE="$DEST/hooks/${name%.py}.registered" \
+    HOOK_MATCHER="$matcher" HOOK_LABEL="$label" \
     python3 - "$SETTINGS" <<'PY'
 import json, os, shlex, sys
 
 path = sys.argv[1]
-script = os.environ["BRIEF_HOOK"]
+script = os.environ["HOOK_PATH"]
 command = "python3 " + shlex.quote(script)
-state = os.environ["BRIEF_HOOK_STATE"]
+state = os.environ["HOOK_STATE"]
 try:
     with open(state) as fh:
         previous = fh.read().strip()
@@ -804,7 +870,8 @@ except FileNotFoundError:
 ours = {command, previous} - {""}
 # A plain name list: Claude Code splits it on "|" and matches each name exactly
 # (a regex like "^(Agent|Task)$" would skip that path and its tool aliases).
-matcher = "Agent|Task"
+matcher = os.environ["HOOK_MATCHER"]
+label = os.environ["HOOK_LABEL"]
 try:
     with open(path) as fh:
         data = json.load(fh)
@@ -830,7 +897,7 @@ wanted = {"matcher": matcher, "hooks": [{"type": "command", "command": command}]
 if wanted in pre and sum(
     is_ours(h) for e in pre if isinstance(e, dict) for h in e.get("hooks", []) or []
 ) == 1:
-    print("    brief hook already registered")
+    print(f"    {label} already registered")
 else:
     # Drop the entries this installer wrote before (old path or matcher), add one.
     kept = []
@@ -845,12 +912,26 @@ else:
     with open(path, "w") as fh:
         json.dump(data, fh, indent=2)
         fh.write("\n")
-    print(f"    registered brief hook in {path}")
+    print(f"    registered {label} in {path}")
 with open(state, "w") as fh:
     fh.write(command + "\n")
 PY
+}
+
+if command -v python3 >/dev/null 2>&1; then
+  mkdir -p "$DEST/hooks"
+  SETTINGS="$DEST/settings.json"
+  install_hook check-agent-brief.py 'Agent|Task' 'brief hook'
+  install_hook check-bash-command.py 'Bash' 'bash command hook'
 else
-  echo "!! python3 not found; skipping the subagent brief hook" >&2
+  echo "!! python3 not found; skipping the warn-only hooks" >&2
+fi
+
+# settings.json is backed up before the merges above, which may change nothing;
+# a backup identical to the result only adds clutter.
+if [ -e "$DEST/settings.json.backup-$STAMP" ] && cmp -s "$DEST/settings.json.backup-$STAMP" "$DEST/settings.json"; then
+  rm -f "$DEST/settings.json.backup-$STAMP"
+  echo "    settings.json unchanged, its backup removed"
 fi
 
 # ------------------------------------------------------------ authentication

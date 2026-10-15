@@ -54,3 +54,9 @@ Introduced in commit `4df83d3`.
 ### Risks
 - Merge logic must handle every shape a hand-edited `settings.json` can take;
   an unhandled shape would abort the install under `set -e`.
+
+## Amendment 2026-10-15
+
+The installer now has one deleting path, `--prune-backups <N>`, which removes
+old `.backup-*` copies only after "yes" is typed in a terminal (ADR-0010). It
+also backs up a file only when its content would change.
