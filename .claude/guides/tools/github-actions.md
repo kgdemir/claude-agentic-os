@@ -6,7 +6,7 @@ Applies to repositories with `.github/workflows/`.
   *Why: two copies drift, and "passes locally, fails in CI" (or the reverse) follows.*
 - **Third-party actions are pinned to a full commit SHA,** with the version in a comment: `uses: actions/checkout@<40-char-sha> # v4.2.2`. Let the dependency bot bump them (`package-ecosystem: github-actions`).
   *Why: a tag can be moved to malicious code after you reviewed it; a SHA cannot.*
-- **Least-privilege token.** Set `permissions: contents: read` at the top of every workflow and grant more per job only where needed (`pull-requests: write`, `id-token: write`).
+- **Least-privilege token.** Give every workflow a top-level `permissions:` block with `contents: read` and grant more per job only where needed (`pull-requests: write`, `id-token: write`).
   *Why: the default token can be write-all; a compromised step then pushes code or edits releases.*
 - **Untrusted input never goes straight into `run:`.** Pass `${{ github.event.pull_request.title }}`, branch names, issue bodies and similar through `env:` and quote the variable in the script.
   *Why: `${{ }}` is pasted into the script before the shell runs, so a crafted title becomes shell commands (script injection).*
