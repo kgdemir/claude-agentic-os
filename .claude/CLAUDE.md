@@ -53,6 +53,17 @@ with the Read tool before working on that part, and follow it.
 | Project ships or calls an AI/ML model | `~/.claude/guides/features/ai-models.md` |
 | Login, tokens, sessions, LDAP, or fetching user-supplied URLs | `~/.claude/guides/features/auth.md` |
 | Logging beyond the console, tracing or metrics | `~/.claude/guides/features/observability.md` |
+| Adding or restructuring modules, layers or projects | `~/.claude/guides/features/architecture.md` |
+| Project exposes an HTTP API (REST, OpenAPI) | `~/.claude/guides/features/api-design.md` |
+| Queues, message brokers, scheduled or background jobs | `~/.claude/guides/features/background-jobs.md` |
+| Code calls another service over the network, or runs behind a load balancer or orchestrator | `~/.claude/guides/features/resilience.md` |
+| Project changes a database schema (any migration tool) | `~/.claude/guides/features/database-migrations.md` |
+| Parsing or formatting numbers and dates, comparing strings, storing times, or more than one UI language | `~/.claude/guides/features/i18n.md` |
+| Project has a web or desktop UI | `~/.claude/guides/features/accessibility.md` |
+| Project serves HTML or an API called from a browser | `~/.claude/guides/features/web-security.md` |
+| Project tags releases, publishes packages or images, or keeps `CHANGELOG.md` | `~/.claude/guides/features/releases.md` |
+| `.github/workflows/` present | `~/.claude/guides/tools/github-actions.md` |
+| Project has package dependencies and a remote repository | `~/.claude/guides/tools/dependency-updates.md` |
 | caveman plugin active (`CAVEMAN MODE` at session start) | `~/.claude/guides/plugins/caveman.md` |
 | context-mode tools (`ctx_*`) available | `~/.claude/guides/plugins/context-mode.md` |
 | memsearch plugin installed | `~/.claude/guides/plugins/memsearch.md` |

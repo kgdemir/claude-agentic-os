@@ -20,6 +20,7 @@ Applies to `capabilities.md`, `README.md`, `docs/adr/README.md`, `docs/user-guid
 2. Fold each new feature, fix and ADR into:
    - `capabilities.md` — authoritative feature + tech-stack overview
    - `README.md` — architecture table + stack
+   - `docs/architecture.md` — C4 diagrams, when the project has one
    - `docs/adr/README.md` — ADR index; rows must match `docs/adr/*.md` exactly (it goes stale easily)
    - `docs/user-guides/*.md` — end-user guide, plus `PROGRESS.md`
 3. Any guide page change must reach `combined.md`. Links in `combined.md`: rewrite `http://localhost…` and cross-page links to in-document anchors (`#section-anchor`); the PDF has no web server and no sibling files.
