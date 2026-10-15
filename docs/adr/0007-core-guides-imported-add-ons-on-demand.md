@@ -94,3 +94,11 @@ Introduced in the commit that adds this ADR. Partly supersedes ADR-0001
 ### Risks
 - A trigger written too narrowly leaves its rules unread. Triggers name files or
   signals Claude can see (`*.csproj`, `ffmpeg` calls, `CAVEMAN MODE`).
+
+## Amendment 2026-10-15
+
+The end-user guide rules (`docs/user-guides/` pages, `combined.md`, the PDF
+rebuild) moved out of `core/docs-folder.md` and `core/docs-updates.md` into the
+add-on `features/user-guide.md`, with the trigger "Project has or creates
+`docs/user-guides/`". Core keeps a one-line pointer, so sessions in projects
+without an end-user guide no longer load those rules.

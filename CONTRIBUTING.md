@@ -47,12 +47,13 @@ Never hard-code a person, a machine or a path. The installer substitutes:
 | `{{PROJECT_ROOT}}` | where the person's projects live |
 | `{{PROJECT_LOCATION_IMPORT}}` | the import line for `addons/project-location.md`, or nothing when the person opts out |
 
-The installer aborts if any `{{` survives substitution, so a new placeholder
+The installer aborts if any `{{UPPER_CASE}}` placeholder survives substitution, so a new placeholder
 needs a matching `sed` expression in `install_file()`.
 
 ## Before opening a pull request
 
 ```sh
+tools/check.sh                          # every gate, as CI runs them
 bash -n install.sh                      # syntax
 shellcheck install.sh .claude/bin/runclaude .claude/statusline-*.sh   # if available
 

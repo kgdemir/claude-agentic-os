@@ -15,8 +15,9 @@ no details.
 
 It is an installer, so read it before you run it. In full it can:
 
-- write Markdown rules, templates and a statusline into `~/.claude/`, backing up
-  every file it replaces as `<name>.backup-<timestamp>`;
+- write Markdown rules, templates, two hook scripts and a statusline into
+  `~/.claude/`, backing up every file whose content it changes as
+  `<name>.backup-<timestamp>`;
 - merge keys into `~/.claude/settings.json`, never overwrite the file;
 - install operating-system packages through `brew`, `sudo apt-get`, `sudo dnf`,
   `sudo zypper` or `sudo pacman`, after asking;
@@ -30,18 +31,29 @@ It is an installer, so read it before you run it. In full it can:
   when there is no terminal or when `-y` is passed.
 
 `--no-plugins --no-launcher --no-statusline --no-deps` reduces it to writing
-Markdown into `~/.claude/`.
+Markdown and the hook scripts into `~/.claude/` and registering the hooks in
+`settings.json`.
+
+The hooks run on every Agent and Bash call in your sessions. They only add a
+reminder; they never block a command, write a file or use the network. The Bash
+hook runs `git diff --cached` (and `git diff` for `git commit -a`) in the
+command's folder, with a 5-second limit, to look for secret-shaped text. A
+match is reported by file and kind only; the value is never printed, logged or
+stored.
 
 ## What it never does
 
-- It never writes, reads or copies a credential, token or API key. The only
+- It never writes, stores or copies a credential, token or API key. The only
   environment values it sets are `CAVEMAN_DEFAULT_MODE`,
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and, when you ask for it,
   `ECC_DISABLED_HOOKS`.
 - It never sends anything anywhere. The only network access is the package
   manager, the Claude Code installer and the plugin marketplaces.
-- It never deletes a file. Replacements are backed up first, and guides from
-  the old flat layout are renamed to `<name>.backup-<timestamp>`, not removed.
+- It never deletes a file during an install. Replacements are backed up first,
+  and guides from the old flat layout are renamed to
+  `<name>.backup-<timestamp>`, not removed. The one deleting path is
+  `--prune-backups <N>`, which only removes `.backup-<timestamp>` files in the
+  pack's own folders, lists them first, and needs `yes` typed in a terminal.
 
 ## Third-party trust
 
