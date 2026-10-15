@@ -17,12 +17,14 @@ Warn-only: the command always runs. Any unexpected input is let through
 silently, so the hook can never break a session.
 """
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 
 GIT_TIMEOUT_SECONDS = 5
+MESSAGE_FILE_MAX_BYTES = 64 * 1024
 
 # Splits a command line into the simple commands joined by && || ; | or newline.
 SEGMENT_SPLIT = re.compile(r"&&|\|\||;|\n|(?<!\|)\|(?!\|)")
@@ -35,7 +37,13 @@ GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
 ATTRIBUTION = re.compile(
     r"co-authored-by:|generated with \[?claude|noreply@anthropic\.com", re.IGNORECASE
 )
+# Only used when the command line cannot be tokenised (unbalanced quotes).
 TEXT_COMMANDS = re.compile(r"\bgit\s+(commit|tag|notes)\b|\bgh\s+(pr|issue|release)\b")
+GIT_TEXT_SUBCOMMANDS = {"commit", "tag", "notes"}
+GH_TEXT_SUBCOMMANDS = {"pr", "issue", "release"}
+# Options naming a file that holds the message or body (`-` means stdin).
+MESSAGE_FILE_OPTIONS = {"-F", "--file", "--body-file"}
+COMMAND_WRAPPERS = {"sudo", "command", "time", "env", "exec"}
 
 # A gate is recognised only as the command a pipe stage runs, never as an
 # argument (`grep x tools/check.sh | head` runs grep, not the gate).
@@ -48,7 +56,11 @@ GATE = re.compile(
     r"|(\S*/)?tools/[\w.-]+\.sh\b)"
 )
 # A heredoc body is data, not commands: `|` and `git add .` inside it run nothing.
-HEREDOC = re.compile(r"(<<-?[ \t]*(['\"]?)(\w+)\2[^\n]*\n)(?:.*?\n)?[ \t]*\3[ \t]*(?=\n|$)", re.DOTALL)
+# Each body is cut out and its `<<EOF` replaced by a marker, so a check can
+# still tell which command the body feeds.
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)(\w+)\1([^\n]*\n)(.*?\n)?[ \t]*\2[ \t]*(?=\n|$)", re.DOTALL)
+HEREDOC_MARKER = "__HEREDOC_{}__"
+HEREDOC_MARKER_FIND = re.compile(r"__HEREDOC_(\d+)__")
 
 # Leading `VAR=value` assignments and wrappers before the command word.
 COMMAND_PREFIX = re.compile(r"^\s*(?:(?:\w+=\S*|sudo|time|env|command|exec)\s+)*")
@@ -75,12 +87,27 @@ def tokens(segment: str) -> list:
         return segment.split()
 
 
-def git_call(segment: str):
-    """Return (subcommand, args) when the segment runs git, else None."""
-    words = tokens(segment)
-    # Skip env assignments and wrappers such as `sudo`, `command`, `time`.
-    while words and ("=" in words[0] and not words[0].startswith("-") or words[0] in {"sudo", "command", "time", "env"}):
+def split_heredocs(command: str):
+    """Return the command with heredoc bodies replaced by markers, and the bodies."""
+    bodies = []
+
+    def cut(match):
+        bodies.append(match.group(4) or "")
+        return HEREDOC_MARKER.format(len(bodies) - 1) + match.group(3)
+
+    return HEREDOC.sub(cut, command), bodies
+
+
+def strip_prefix(words: list) -> list:
+    """Drop leading env assignments and wrappers such as `sudo`, `env`, `time`."""
+    while words and ("=" in words[0] and not words[0].startswith("-") or words[0] in COMMAND_WRAPPERS):
         words = words[1:]
+    return words
+
+
+def git_words(words: list):
+    """Return (subcommand, args) when the words run git, else None."""
+    words = strip_prefix(words)
     if not words or words[0].rsplit("/", 1)[-1] != "git":
         return None
     rest = words[1:]
@@ -89,6 +116,71 @@ def git_call(segment: str):
     if not rest:
         return None
     return rest[0], rest[1:]
+
+
+def git_call(segment: str):
+    """Return (subcommand, args) when the segment runs git, else None."""
+    return git_words(tokens(segment))
+
+
+def pipelines(code: str):
+    """Split a command line into pipelines, each a list of stages (word lists).
+    Return None when it cannot be tokenised."""
+    lexer = shlex.shlex(code, posix=True, punctuation_chars="();<>|&\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        words = list(lexer)
+    except ValueError:
+        return None
+    result, stages, stage = [], [], []
+    for word in words:
+        if word in {"|", "|&"}:
+            stages.append(stage)
+            stage = []
+        elif word and set(word) <= set("&;\n()|"):
+            stages.append(stage)
+            result.append([s for s in stages if s])
+            stages, stage = [], []
+        else:
+            stage.append(word)
+    stages.append(stage)
+    result.append([s for s in stages if s])
+    return [p for p in result if p]
+
+
+def is_text_command(stage: list) -> bool:
+    """True when the stage runs a command whose text lands in the repository or on GitHub."""
+    call = git_words(stage)
+    if call:
+        return call[0] in GIT_TEXT_SUBCOMMANDS
+    words = strip_prefix(stage)
+    return (len(words) > 1 and words[0].rsplit("/", 1)[-1] == "gh"
+            and words[1] in GH_TEXT_SUBCOMMANDS)
+
+
+def message_files(stage: list) -> list:
+    """File names given to -F/--file/--body-file, `-` (stdin) left out."""
+    names = []
+    for i, word in enumerate(stage):
+        if word in MESSAGE_FILE_OPTIONS and i + 1 < len(stage):
+            names.append(stage[i + 1])
+        elif word.startswith(("--file=", "--body-file=")):
+            names.append(word.split("=", 1)[1])
+        elif word.startswith("-F") and len(word) > 2:
+            names.append(word[2:])
+    return [n for n in names if n != "-"]
+
+
+def read_message_file(cwd: str, name: str) -> str:
+    # A missing file is normal (it may be written later in the same command,
+    # or the commit is about to fail anyway); there is then nothing to check.
+    try:
+        with open(os.path.join(cwd or os.getcwd(), name), encoding="utf-8", errors="replace") as fh:
+            return fh.read(MESSAGE_FILE_MAX_BYTES)
+    except OSError:
+        return ""
 
 
 def git_safety(command: str) -> list:
@@ -112,10 +204,38 @@ def git_safety(command: str) -> list:
     return found
 
 
-def attribution(command: str) -> list:
-    if TEXT_COMMANDS.search(command) and ATTRIBUTION.search(command):
-        return ["AI attribution in a commit/PR/issue text (Co-Authored-By or 'Generated with Claude'); "
-                "remove it, the global rules forbid it everywhere"]
+def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
+    """Warn when a commit, tag, note, PR, issue or release text carries AI
+    attribution: in its own arguments, in what is piped into it, in a heredoc
+    feeding it, or in the file given to -F/--body-file. The same words
+    anywhere else (a test file, a grep) are not a commit text."""
+    found = ["AI attribution in a commit/PR/issue text (Co-Authored-By or 'Generated with Claude'); "
+             "remove it, the global rules forbid it everywhere"]
+    parsed = pipelines(code)
+    if parsed is None:
+        return found if TEXT_COMMANDS.search(command) and ATTRIBUTION.search(command) else []
+
+    def fed(words: list) -> str:
+        return "\n".join(bodies[int(n)] for w in words for n in HEREDOC_MARKER_FIND.findall(w)
+                         if int(n) < len(bodies))
+
+    written = {}  # file name -> heredoc text redirected into it in this command
+    for pipeline in parsed:
+        for stage in pipeline:
+            for i, word in enumerate(stage[:-1]):
+                if word in {">", ">>"}:
+                    written[stage[i + 1]] = fed(stage)
+    for pipeline in parsed:
+        if not any(is_text_command(stage) for stage in pipeline):
+            continue
+        words = [w for stage in pipeline for w in stage]
+        text = " ".join(words) + "\n" + fed(words)
+        for stage in pipeline:
+            if is_text_command(stage):
+                for name in message_files(stage):
+                    text += "\n" + (written[name] if name in written else read_message_file(cwd, name))
+        if ATTRIBUTION.search(text):
+            return found
     return []
 
 
@@ -173,9 +293,9 @@ def warnings(event: object) -> list:
     if not isinstance(command, str):
         return []
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else ""
-    # Attribution reads the full text: a commit message often arrives as a heredoc.
-    code = HEREDOC.sub(lambda m: m.group(1), command)
-    return git_safety(code) + attribution(command) + gate_pipe(code) + staged_secrets(code, cwd)
+    code, bodies = split_heredocs(command)
+    return (git_safety(code) + attribution(command, code, bodies, cwd) + gate_pipe(code)
+            + staged_secrets(code, cwd))
 
 
 def main() -> int:

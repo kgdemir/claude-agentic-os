@@ -46,6 +46,12 @@ expect("co-author", B, bash('git commit -m "fix: x\n\nCo-Authored-By: Bot <norep
 expect("generated", B, bash('gh pr create --body "Generated with [Claude Code](https://x)"'), "AI attribution")
 expect("clean commit", B, bash('git commit -m "fix: tidy"'), None)
 expect("grep is not a commit", B, bash("grep -ri co-authored-by: ."), None)
+expect("commit word in a test file", B, bash("cat > t.py <<'EOF'\nrun('git commit -m \"x\\n\\nCo-Authored-By: Bot\"')\nEOF"), None)
+expect("commit after an unrelated mention", B, bash('grep -rn "Co-Authored-By:" docs; git commit -m "fix: tidy"'), None)
+expect("commit message in $(cat <<EOF)", B, bash("git commit -m \"$(cat <<'EOF'\nfix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>\nEOF\n)\""), "AI attribution")
+expect("message piped into commit -F -", B, bash("printf 'fix\\n\\nGenerated with Claude Code\\n' | git commit -F -"), "AI attribution")
+expect("message file written then used", B, bash("cat > msg.txt <<'EOF'\nfix: x\n\nCo-Authored-By: Bot\nEOF\ngit commit -F msg.txt"), "AI attribution")
+expect("pr body file written then used", B, bash("cat > body.md <<'EOF'\nGenerated with [Claude Code](https://x)\nEOF\ngh pr create --body-file body.md"), "AI attribution")
 # gate pipes
 expect("npm lint | tail", B, bash("npm run lint 2>&1 | tail -1"), "pipefail")
 expect("dotnet test | grep", B, bash("dotnet test | grep -i failed"), "pipefail")
@@ -83,6 +89,9 @@ with tempfile.TemporaryDirectory() as repo:
     if fake_key in got:
         failures.append("secret staged: the warning repeats the secret value")
     expect("no commit, no scan", B, bash("git status", repo), None)
+    with open(os.path.join(repo, "msg.txt"), "w") as fh:
+        fh.write("fix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>\n")
+    expect("message file on disk", B, bash("git commit -F msg.txt", repo), "AI attribution")
 
 # robustness: never break a session
 expect("other tool", B, {"tool_name": "Read", "tool_input": {"file_path": "x"}}, None)
