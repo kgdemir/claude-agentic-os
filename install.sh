@@ -572,7 +572,9 @@ PLUGIN_ID_LIST
   # Record the result in settings.json: enable each plugin, turn on auto-update
   # for each marketplace, and set the two environment values the set expects.
   SETTINGS="$DEST/settings.json"
-  if [ -e "$SETTINGS" ]; then
+  # One backup per run, taken before the first change: a later step must not
+  # overwrite it with an already-merged copy.
+  if [ -e "$SETTINGS" ] && [ ! -e "$SETTINGS.backup-$STAMP" ]; then
     cp -p "$SETTINGS" "$SETTINGS.backup-$STAMP"
     echo "    backed up  $SETTINGS.backup-$STAMP"
   fi
@@ -726,7 +728,7 @@ if [ "$WITH_STATUSLINE" = "yes" ]; then
     # Register it in settings.json, keeping whatever else is in there.
     SETTINGS="$DEST/settings.json"
     if command -v python3 >/dev/null 2>&1; then
-      if [ -e "$SETTINGS" ]; then
+      if [ -e "$SETTINGS" ] && [ ! -e "$SETTINGS.backup-$STAMP" ]; then
         cp -p "$SETTINGS" "$SETTINGS.backup-$STAMP"
         echo "    backed up  $SETTINGS.backup-$STAMP"
       fi
