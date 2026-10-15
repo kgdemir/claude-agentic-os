@@ -79,8 +79,10 @@ Then confirm:
 
 ## Shell portability
 
-Both statusline builds and the launcher run on macOS (bash 3.2, BSD userland)
-and Linux (bash 5, GNU coreutils):
+Both statusline builds, the launcher, `install.sh` and the `tools/` scripts run
+on macOS (bash 3.2, BSD userland, system `python3`) and Linux (bash 5, GNU
+coreutils). CI runs the gates on both, with the stock macOS `bash` and
+`python3` first on PATH:
 
 - No `declare -A`, no `${var^^}`, no `mapfile`.
 - `local` on its own line per variable: `local a="$1" b="$2"` trips `set -u`.

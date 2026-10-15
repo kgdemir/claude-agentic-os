@@ -54,6 +54,16 @@ expect("pipefail set", B, bash("set -o pipefail; npm run lint | tail -1"), None)
 expect("gate unpiped", B, bash("npm run lint && git status | head"), None)
 expect("non-gate pipe", B, bash("git log --oneline | head -5"), None)
 expect("or is not a pipe", B, bash("npm test || echo failed"), None)
+expect("gate name as an argument", B, bash("grep -n python3 tools/check.sh | head -3"), None)
+expect("gate words in a string", B, bash('echo "npm run lint" | wc -c'), None)
+expect("pipes in a heredoc body", B, bash("python3 - <<'EOF'\nx = 'a|tsc|b'\nEOF\ntools/test-hooks.sh"), None)
+expect("git add . in a heredoc body", B, bash("cat > steps.sh <<EOF\ngit add .\nEOF"), None)
+expect("gate after a heredoc", B, bash("cat <<'EOF' > x\na\nEOF\nnpm test | tail -1"), "pipefail")
+expect("attribution in a heredoc", B, bash("git commit -F - <<'EOF'\nfix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>\nEOF"), "AI attribution")
+expect("./tools script | tail", B, bash("./tools/check.sh | tail -1"), "pipefail")
+expect("env prefix gate | tail", B, bash("CI=1 npm test | tail -1"), "pipefail")
+expect("npx eslint | tail", B, bash("npx eslint . | tail -1"), "pipefail")
+expect("python -m pytest | tail", B, bash("python3 -m pytest -q | tail -1"), "pipefail")
 
 # secrets: a throwaway repo; key-shaped strings are assembled here, never stored.
 with tempfile.TemporaryDirectory() as repo:

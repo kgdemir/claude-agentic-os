@@ -37,13 +37,21 @@ ATTRIBUTION = re.compile(
 )
 TEXT_COMMANDS = re.compile(r"\bgit\s+(commit|tag|notes)\b|\bgh\s+(pr|issue|release)\b")
 
+# A gate is recognised only as the command a pipe stage runs, never as an
+# argument (`grep x tools/check.sh | head` runs grep, not the gate).
 GATE = re.compile(
-    r"\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|lint|build|typecheck)\b"
-    r"|\bdotnet\s+(build|test|publish)\b"
-    r"|\b(pytest|tsc|eslint|vitest|jest|ruff|mypy)\b"
-    r"|\b(cargo|go)\s+(build|test)\b"
-    r"|\btools/[\w.-]+\.sh\b"
+    r"(?:(?:bash|sh)\s+|npx\s+|python3?\s+-m\s+)?"
+    r"(?:(npm|pnpm|yarn|bun)\s+(run\s+)?(test|lint|build|typecheck)\b"
+    r"|dotnet\s+(build|test|publish)\b"
+    r"|(pytest|tsc|eslint|vitest|jest|ruff|mypy)\b"
+    r"|(cargo|go)\s+(build|test)\b"
+    r"|(\S*/)?tools/[\w.-]+\.sh\b)"
 )
+# A heredoc body is data, not commands: `|` and `git add .` inside it run nothing.
+HEREDOC = re.compile(r"(<<-?[ \t]*(['\"]?)(\w+)\2[^\n]*\n)(?:.*?\n)?[ \t]*\3[ \t]*(?=\n|$)", re.DOTALL)
+
+# Leading `VAR=value` assignments and wrappers before the command word.
+COMMAND_PREFIX = re.compile(r"^\s*(?:(?:\w+=\S*|sudo|time|env|command|exec)\s+)*")
 
 SECRETS = (
     ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
@@ -116,7 +124,7 @@ def gate_pipe(command: str) -> list:
         return []
     for chain in CHAIN_SPLIT.split(command):
         stages = PIPE_SPLIT.split(chain)
-        if len(stages) > 1 and any(GATE.search(stage) for stage in stages[:-1]):
+        if len(stages) > 1 and any(GATE.match(COMMAND_PREFIX.sub("", stage, count=1)) for stage in stages[:-1]):
             return ["a build/test/lint command is piped without `set -o pipefail`, so the exit code "
                     "is the last command's; add `set -o pipefail` or run the gate unpiped (§1)"]
     return []
@@ -165,7 +173,9 @@ def warnings(event: object) -> list:
     if not isinstance(command, str):
         return []
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else ""
-    return git_safety(command) + attribution(command) + gate_pipe(command) + staged_secrets(command, cwd)
+    # Attribution reads the full text: a commit message often arrives as a heredoc.
+    code = HEREDOC.sub(lambda m: m.group(1), command)
+    return git_safety(code) + attribution(command) + gate_pipe(code) + staged_secrets(code, cwd)
 
 
 def main() -> int:
