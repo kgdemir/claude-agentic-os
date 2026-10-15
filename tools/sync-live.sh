@@ -38,14 +38,13 @@ done < "$LOCAL_CONFIG"
 
 RENDER="$(mktemp -d)"
 trap 'rm -rf "$RENDER"' EXIT
-if ! CLAUDE_HOME="$RENDER" ./install.sh -y "${ARGS[@]}" \
-    --no-plugins --no-launcher --no-statusline --no-deps </dev/null >"$RENDER.log" 2>&1; then
-  cat "$RENDER.log" >&2
-  rm -f "$RENDER.log"
+# ${ARGS[@]+...}: macOS bash 3.2 treats an empty array as unset under set -u.
+if ! CLAUDE_HOME="$RENDER" ./install.sh -y ${ARGS[@]+"${ARGS[@]}"} \
+    --no-plugins --no-launcher --no-statusline --no-deps </dev/null >"$RENDER/install.log" 2>&1; then
+  cat "$RENDER/install.log" >&2
   echo "!! render failed; live folder not touched" >&2
   exit 1
 fi
-rm -f "$RENDER.log"
 
 changed=0
 while IFS= read -r rel; do
