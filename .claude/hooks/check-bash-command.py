@@ -41,8 +41,12 @@ ATTRIBUTION = re.compile(
 TEXT_COMMANDS = re.compile(r"\bgit\s+(commit|tag|notes)\b|\bgh\s+(pr|issue|release)\b")
 GIT_TEXT_SUBCOMMANDS = {"commit", "tag", "notes"}
 GH_TEXT_SUBCOMMANDS = {"pr", "issue", "release"}
-# Options naming a file that holds the message or body (`-` means stdin).
-MESSAGE_FILE_OPTIONS = {"-F", "--file", "--body-file"}
+# Options naming a file that holds the message, body or notes (`-` means stdin).
+MESSAGE_FILE_OPTIONS = {"-F", "--file", "--body-file", "--notes-file"}
+# Short options that take a value, so a bundle stops there (`-mF` is message "F").
+SHORT_OPTIONS_WITH_VALUE = set("mCct")
+# A backslash at the end of a line continues the command on the next one.
+LINE_CONTINUATION = re.compile(r"\\\n")
 COMMAND_WRAPPERS = {"sudo", "command", "time", "env", "exec"}
 
 # A gate is recognised only as the command a pipe stage runs, never as an
@@ -118,6 +122,18 @@ def git_words(words: list):
     return rest[0], rest[1:]
 
 
+def git_base(stage: list, cwd: str) -> str:
+    """The folder git works in: cwd, moved by each `git -C <dir>`."""
+    words = strip_prefix(stage)
+    base = cwd or os.getcwd()
+    rest = words[1:]
+    while rest and rest[0].startswith("-"):
+        if rest[0] == "-C" and len(rest) > 1:
+            base = os.path.join(base, rest[1])
+        rest = rest[2:] if rest[0] in GIT_OPTIONS_WITH_VALUE else rest[1:]
+    return base
+
+
 def git_call(segment: str):
     """Return (subcommand, args) when the segment runs git, else None."""
     return git_words(tokens(segment))
@@ -164,20 +180,34 @@ def message_files(stage: list) -> list:
     """File names given to -F/--file/--body-file, `-` (stdin) left out."""
     names = []
     for i, word in enumerate(stage):
-        if word in MESSAGE_FILE_OPTIONS and i + 1 < len(stage):
-            names.append(stage[i + 1])
-        elif word.startswith(("--file=", "--body-file=")):
+        following = stage[i + 1] if i + 1 < len(stage) else None
+        if word in MESSAGE_FILE_OPTIONS:
+            if following is not None:
+                names.append(following)
+        elif word.startswith(("--file=", "--body-file=", "--notes-file=")):
             names.append(word.split("=", 1)[1])
-        elif word.startswith("-F") and len(word) > 2:
-            names.append(word[2:])
+        elif word.startswith("-") and not word.startswith("--"):
+            # A bundle of short options: `-aF msg`, `-aFmsg`.
+            for j, flag in enumerate(word[1:], 1):
+                if flag == "F":
+                    value = word[j + 1:] or following
+                    if value is not None:
+                        names.append(value)
+                    break
+                if flag in SHORT_OPTIONS_WITH_VALUE:
+                    break
     return [n for n in names if n != "-"]
 
 
-def read_message_file(cwd: str, name: str) -> str:
-    # A missing file is normal (it may be written later in the same command,
-    # or the commit is about to fail anyway); there is then nothing to check.
+def read_message_file(base: str, name: str) -> str:
+    # Only regular files: opening a fifo or a device such as /dev/tty would block
+    # the hook. A missing file is normal (the commit is about to fail anyway);
+    # there is then nothing to check.
+    path = os.path.join(base, name)
+    if not os.path.isfile(path):
+        return ""
     try:
-        with open(os.path.join(cwd or os.getcwd(), name), encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             return fh.read(MESSAGE_FILE_MAX_BYTES)
     except OSError:
         return ""
@@ -219,12 +249,12 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
         return "\n".join(bodies[int(n)] for w in words for n in HEREDOC_MARKER_FIND.findall(w)
                          if int(n) < len(bodies))
 
-    written = {}  # file name -> heredoc text redirected into it in this command
+    written = {}  # file name -> text of the command (and heredoc) that writes it
     for pipeline in parsed:
         for stage in pipeline:
             for i, word in enumerate(stage[:-1]):
                 if word in {">", ">>"}:
-                    written[stage[i + 1]] = fed(stage)
+                    written[stage[i + 1]] = " ".join(stage) + "\n" + fed(stage)
     for pipeline in parsed:
         if not any(is_text_command(stage) for stage in pipeline):
             continue
@@ -232,8 +262,9 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
         text = " ".join(words) + "\n" + fed(words)
         for stage in pipeline:
             if is_text_command(stage):
+                base = git_base(stage, cwd) if git_words(stage) else (cwd or os.getcwd())
                 for name in message_files(stage):
-                    text += "\n" + (written[name] if name in written else read_message_file(cwd, name))
+                    text += "\n" + (written[name] if name in written else read_message_file(base, name))
         if ATTRIBUTION.search(text):
             return found
     return []
@@ -294,6 +325,7 @@ def warnings(event: object) -> list:
         return []
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else ""
     code, bodies = split_heredocs(command)
+    code = LINE_CONTINUATION.sub(" ", code)
     return (git_safety(code) + attribution(command, code, bodies, cwd) + gate_pipe(code)
             + staged_secrets(code, cwd))
 
