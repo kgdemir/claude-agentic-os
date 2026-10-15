@@ -9,10 +9,14 @@ python3 -I - "$PWD/.claude/hooks" <<'PY'
 import json, os, subprocess, sys, tempfile
 
 HOOKS = sys.argv[1]
+HOOK_TIMEOUT_SECONDS = 10
 
 def run(hook, event):
-    out = subprocess.run([sys.executable, "-I", os.path.join(HOOKS, hook)],
-                         input=json.dumps(event), capture_output=True, text=True, check=True).stdout
+    try:
+        out = subprocess.run([sys.executable, "-I", os.path.join(HOOKS, hook)], input=json.dumps(event),
+                             capture_output=True, text=True, check=True, timeout=HOOK_TIMEOUT_SECONDS).stdout
+    except subprocess.TimeoutExpired:
+        return "HOOK HUNG"
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else ""
 
 def bash(command, cwd=""):
@@ -92,6 +96,33 @@ with tempfile.TemporaryDirectory() as repo:
     with open(os.path.join(repo, "msg.txt"), "w") as fh:
         fh.write("fix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>\n")
     expect("message file on disk", B, bash("git commit -F msg.txt", repo), "AI attribution")
+
+# message files and line continuations: a plain folder, no repository, so the
+# secret scan has nothing to report.
+with tempfile.TemporaryDirectory() as work:
+    def write(name, text):
+        os.makedirs(os.path.dirname(os.path.join(work, name)), exist_ok=True)
+        with open(os.path.join(work, name), "w") as fh:
+            fh.write(text)
+    write("notes.md", "Generated with Claude Code\n")
+    write("clean.md", "fix: tidy\n")
+    write("m.txt", "fix\n\nCo-Authored-By: Bot\n")
+    write("sub/msg.txt", "fix\n\nCo-Authored-By: Bot\n")
+    os.mkfifo(os.path.join(work, "pipe"))
+    expect("-F on a fifo does not hang", B, bash("git commit -F pipe", work), None)
+    expect("release --notes-file", B, bash("gh release create v1 --notes-file notes.md", work), "AI attribution")
+    expect("release clean notes", B, bash("gh release create v1 --notes-file clean.md", work), None)
+    expect("bundled -aF file", B, bash("git commit -aF m.txt", work), "AI attribution")
+    expect("bundled -aFfile", B, bash("git commit -aFm.txt", work), "AI attribution")
+    expect("bundled -a clean", B, bash("git commit -aF clean.md", work), None)
+    expect("git -C dir -F file", B, bash("git -C sub commit -F msg.txt", work), "AI attribution")
+    expect("git -C dir, file not there", B, bash("git -C sub commit -F m.txt", work), None)
+    expect("printf > file then -F", B, bash("printf 'fix\\n\\nCo-Authored-By: Bot\\n' > new.txt && git commit -F new.txt", work), "AI attribution")
+    expect("printf clean > file then -F", B, bash("printf 'fix: tidy' > new.txt && git commit -F new.txt", work), None)
+expect("trailer on a continued line", B, bash('git commit -m "fix" \\\n  --trailer "Co-authored-by: Bot"'), "AI attribution")
+expect("clean continued commit", B, bash('git commit -m "fix" \\\n  --signoff'), None)
+expect("force push on a continued line", B, bash("git push origin main \\\n  --force"), "--force-with-lease")
+expect("gate pipe on a continued line", B, bash("npm test \\\n  | tail -1"), "pipefail")
 
 # robustness: never break a session
 expect("other tool", B, {"tool_name": "Read", "tool_input": {"file_path": "x"}}, None)
