@@ -39,7 +39,9 @@ reminder; they never block a command, write a file or use the network. The Bash
 hook runs `git diff --cached` (and `git diff` for `git commit -a`) in the
 command's folder, with a 5-second limit, to look for secret-shaped text. A
 match is reported by file and kind only; the value is never printed, logged or
-stored.
+stored. To check a commit, tag, PR, issue or release text for AI attribution,
+it also reads the message file named by `-F`/`--file`/`--body-file` (at most
+65,536 characters, from the command's folder); nothing from it is printed or kept.
 
 ## What it never does
 
