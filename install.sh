@@ -698,6 +698,10 @@ fi
 if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
   echo
   SKILL_TMP="$(mktemp -d)"
+  STAGED=""
+  # set -e can stop the step part-way (a failed copy, a full disk): remove the
+  # temp folder and any half-copied skill then, not only on success.
+  trap 'rm -rf "$SKILL_TMP" ${STAGED:+"$STAGED"}' EXIT
   # Read the cache path before the command line below swaps HOME.
   NPM_CACHE="$(npm config get cache 2>/dev/null || true)"
   [ -n "$NPM_CACHE" ] || NPM_CACHE="$HOME/.npm"
@@ -729,6 +733,7 @@ if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
         rm -rf "$SKILL_DIR"
       fi
       mv "$STAGED" "$SKILL_DIR"
+      STAGED=""
       echo "    installed  $SKILL_DIR"
     fi
   else
@@ -736,6 +741,7 @@ if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
     sed 's/^/   /' "$SKILL_TMP/cli.log" >&2
   fi
   rm -rf "$SKILL_TMP"
+  trap - EXIT
 fi
 
 # ----------------------------------------------------------------- statusline
