@@ -45,6 +45,10 @@ expect("reset hard", B, bash("git reset --hard HEAD~1"), "reset --hard")
 expect("reset soft", B, bash("git reset --soft HEAD~1"), None)
 expect("clean -fd", B, bash("git clean -fd"), "git clean -f")
 expect("clean -n", B, bash("git clean -n"), None)
+expect("force push on a second line", B, bash("git status\ngit push --force"), "--force-with-lease")
+expect("force push named in a multi-line message", B, bash('git commit -m "fix: x\n\ngit push --force now warns"'), None)
+expect("force push named in a $'...' message", B, bash("git commit -m $'fix: x\\n\\ngit push --force now warns'"), None)
+expect("add . named in a multi-line message", B, bash('git commit -m "fix: x\n\ngit add . is gone"'), None)
 # attribution
 expect("co-author", B, bash('git commit -m "fix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>"'), "AI attribution")
 expect("generated", B, bash('gh pr create --body "Generated with [Claude Code](https://x)"'), "AI attribution")
@@ -85,6 +89,19 @@ with tempfile.TemporaryDirectory() as repo:
     with open(os.path.join(repo, "clean.py"), "w") as fh:
         fh.write("KEY = os.environ['KEY']\n")
     git("add", "clean.py")
+    # which files the hook opens, through an audit hook around the real script
+    def opened(command):
+        probe = ("import runpy, sys\n"
+                 "sys.addaudithook(lambda e, a: e == 'open' and isinstance(a[0], str)"
+                 " and a[0].endswith('settings.py') and print(a[0], file=sys.stderr))\n"
+                 "runpy.run_path(sys.argv[1], run_name='__main__')\n")
+        return subprocess.run([sys.executable, "-I", "-c", probe, os.path.join(HOOKS, B)],
+                              input=json.dumps(bash(command, repo)), capture_output=True, text=True,
+                              timeout=HOOK_TIMEOUT_SECONDS).stderr
+    if opened("cat settings.py > copy.py"):
+        failures.append("cat with no commit: the hook read the source file")
+    if not opened("cat settings.py > m && git commit -F m"):
+        failures.append("cat then commit -F: the hook did not read the source file")
     expect("clean staged", B, bash("git commit -m x", repo), None)
     git("add", "settings.py")
     got = run(B, bash("git commit -m x", repo))
@@ -132,7 +149,9 @@ expect("clean CRLF-continued commit", B, bash('git commit -m "fix" \\\r\n  --sig
 # $'...' quoting: read as one word, not as unbalanced quotes
 expect("attribution in $'...'", B, bash("git commit -m $'fix\\n\\nCo-Authored-By: Bot'"), "AI attribution")
 expect("$'...' next to an unrelated mention", B, bash("""printf $'a\\'b'; grep -rn "Co-Authored-By:" docs; git commit -m "fix: tidy\""""), None)
-expect("$ inside single quotes is not $'...'", B, bash("""echo 'cost $' && git commit -m 'fix: tidy'"""), None)
+expect("$' inside double quotes is literal", B, bash("""echo "a$'b" && git commit -m x --trailer Co-authored-by:Bot"""), "AI attribution")
+expect("$' inside double quotes, clean commit", B, bash("""echo "a$'b" && git commit -m x --signoff"""), None)
+expect("$' inside single quotes is literal", B, bash("""echo 'cost $'; grep -rn "Co-Authored-By:" docs; git commit -m "fix: tidy\""""), None)
 
 # robustness: never break a session
 expect("other tool", B, {"tool_name": "Read", "tool_input": {"file_path": "x"}}, None)
