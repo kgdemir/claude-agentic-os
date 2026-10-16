@@ -17,6 +17,7 @@ WITH_PROJECT_LOCATION=""
 WITH_LAUNCHER=""
 WITH_STATUSLINE=""
 WITH_PLUGINS=""
+WITH_SECURITY_AUDIT=""
 INSTALL_DEPS=""
 ASSUME_YES=""
 PRUNE_KEEP=""
@@ -40,6 +41,8 @@ usage: ./install.sh [options]
   --no-statusline        Skip the statusline without asking
   --with-plugins         Install the plugin set, enable it, turn on auto-update
   --no-plugins           Skip the plugins without asking
+  --with-security-audit  Install the security-audit skill with the skills CLI
+  --no-security-audit    Skip that skill without asking
   --install-deps         Install missing statusline tools without asking
   --no-deps              Never install tools; just report what is missing
   --prune-backups <N>    Only clean up: keep the backups of the newest N runs,
@@ -65,6 +68,8 @@ while [ $# -gt 0 ]; do
     --with-statusline) WITH_STATUSLINE=yes; shift ;;
     --with-plugins) WITH_PLUGINS=yes; shift ;;
     --no-plugins) WITH_PLUGINS=no; shift ;;
+    --with-security-audit) WITH_SECURITY_AUDIT=yes; shift ;;
+    --no-security-audit) WITH_SECURITY_AUDIT=no; shift ;;
     --no-statusline) WITH_STATUSLINE=no; shift ;;
     --install-deps) INSTALL_DEPS=yes; shift ;;
     --no-deps) INSTALL_DEPS=no; shift ;;
@@ -181,7 +186,7 @@ if [ -n "$PRUNE_KEEP" ]; then
   esac
   BACKUP_LIST="$(
     { find "$DEST" -maxdepth 1 -type f -name '*.backup-*'
-      for d in guides templates hooks bin; do
+      for d in guides templates hooks bin skill-backups; do
         [ -d "$DEST/$d" ] && find "$DEST/$d" -type f -name '*.backup-*'
       done
     } | grep -E '\.backup-[0-9]{8}-[0-9]{6}$' | sort || true
@@ -395,28 +400,39 @@ fi
 
 # -------------------------------------------------------------------- plugins
 
-# The marketplaces this pack expects. Each one currently publishes a single
-# plugin, but the installer installs every plugin a marketplace lists, so an
-# upstream split does not need a change here.
+# The marketplaces this pack expects, one per line: "<source>[ <plugin>...]".
+# A line with no plugin names installs every plugin the marketplace lists, so an
+# upstream split does not need a change here; a line with names installs only
+# those, for a marketplace that publishes far more than the pack uses.
 #   caveman       terse reply style; set to its "ultra" level below
 #   context-mode  sandboxed search/execute tools that keep raw bytes out of context
 #   drywall       duplicate-code detection
 #   ecc           a large agent/skill/hook collection
 #   memsearch     searchable session memory, one database per project
+#   claude-plugins-official  Anthropic's marketplace, named plugins only:
+#     review and workflow  code-review pr-review-toolkit code-simplifier
+#                          feature-dev commit-commands superpowers frontend-design
+#     security             security-guidance
+#     Claude setup         claude-code-setup claude-md-management plugin-dev
+#                          skill-creator
+#     MCP and LSP tools    context7 github playwright typescript-lsp
 PLUGIN_SOURCES="JuliusBrussee/caveman
 mksglu/context-mode
 nikhaldi/drywall
 https://github.com/affaan-m/ECC.git
-zilliztech/memsearch"
+zilliztech/memsearch
+anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier feature-dev commit-commands superpowers frontend-design security-guidance claude-code-setup claude-md-management plugin-dev skill-creator context7 github playwright typescript-lsp"
 
 if [ -z "$WITH_PLUGINS" ]; then
   if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
     WITH_PLUGINS=no
   else
     echo
-    echo "Plugin set: caveman, context-mode, drywall, ecc, memsearch. The installer"
-    echo "adds each marketplace, installs the latest version of every plugin in it,"
-    echo "enables them, and turns on auto-update so later versions arrive by themselves."
+    echo "Plugin set: caveman, context-mode, drywall, ecc, memsearch, and 16 plugins"
+    echo "from Anthropic's official marketplace (review, security, Claude setup, MCP"
+    echo "and LSP tools). The installer adds each marketplace, installs the latest"
+    echo "version of the listed plugins, enables them, and turns on auto-update so"
+    echo "later versions arrive by themselves."
     ANSWER="$(ask 'Install them?' 'yes')"
     case "$ANSWER" in [Nn]*) WITH_PLUGINS=no ;; *) WITH_PLUGINS=yes ;; esac
   fi
@@ -474,8 +490,9 @@ fi
 
 if [ "$WITH_PLUGINS" = "yes" ]; then
   echo
-  while IFS= read -r SOURCE; do
-    [ -n "$SOURCE" ] || continue
+  while IFS= read -r LINE; do
+    [ -n "$LINE" ] || continue
+    SOURCE="${LINE%% *}"
     if claude plugin marketplace add "$SOURCE" >/dev/null 2>&1; then
       echo "    marketplace added    $SOURCE"
     else
@@ -489,12 +506,13 @@ PLUGIN_SOURCE_LIST
   claude plugin marketplace update >/dev/null 2>&1 || true
 
   # Resolve each source to the local marketplace name Claude gave it, then list
-  # the plugins that marketplace publishes. Output is "<plugin>@<marketplace>".
+  # the plugins that marketplace publishes, or only the named ones when the line
+  # names any. Output is "<plugin>@<marketplace>".
   PLUGIN_IDS="$(PLUGIN_SOURCES="$PLUGIN_SOURCES" CLAUDE_DEST="$DEST" python3 <<'PY'
-import json, os, pathlib
+import json, os, pathlib, sys
 
 dest = pathlib.Path(os.environ["CLAUDE_DEST"])
-wanted = [s.strip() for s in os.environ["PLUGIN_SOURCES"].splitlines() if s.strip()]
+wanted = [s.split() for s in os.environ["PLUGIN_SOURCES"].splitlines() if s.strip()]
 
 
 def keys(text):
@@ -511,7 +529,7 @@ try:
 except Exception:
     known = {}
 
-for source in wanted:
+for source, *only in wanted:
     target = keys(source)
     for name, entry in known.items():
         spec = entry.get("source", {})
@@ -525,10 +543,14 @@ for source in wanted:
             plugins = json.loads(catalog.read_text()).get("plugins", [])
         except Exception:
             plugins = []
+        published = set()
         for plugin in plugins:
             plugin_name = plugin.get("name") if isinstance(plugin, dict) else plugin
-            if plugin_name:
+            if plugin_name and (not only or plugin_name in only):
+                published.add(plugin_name)
                 print(f"{plugin_name}@{name}")
+        for missing in [p for p in only if p not in published]:
+            print(f"!! {name} does not publish {missing}; skipped", file=sys.stderr)
         break
 PY
 )"
@@ -629,6 +651,72 @@ with open(path, "w") as fh:
     fh.write("\n")
 print(f"    enabled {len(ids)} plugin(s), auto-update on, in {path}")
 PY
+fi
+
+# ------------------------------------------------------- security-audit skill
+
+# Cloudflare's security-audit skill has no plugin marketplace; its upstream
+# install path is the skills CLI (npm package "skills"). The CLI is pinned so a
+# new release cannot change what this step does, and it runs with a throwaway
+# HOME and config folder so it touches nothing of yours: the result is compared
+# with the installed copy, which is backed up as a tar file outside skills/
+# (a second copy inside skills/ would load as a duplicate skill) and replaced.
+SKILLS_CLI_VERSION="1.7.2"
+SECURITY_AUDIT_SOURCE="https://github.com/cloudflare/security-audit-skill"
+SECURITY_AUDIT_SKILL="security-audit"
+
+if [ -z "$WITH_SECURITY_AUDIT" ]; then
+  if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
+    WITH_SECURITY_AUDIT=no
+  else
+    echo
+    echo "Security-audit skill: Cloudflare's $SECURITY_AUDIT_SKILL skill, installed into"
+    echo "$DEST/skills/ with npx skills@$SKILLS_CLI_VERSION (telemetry off). It gives"
+    echo "security guidance by default and runs a full audit only when asked."
+    ANSWER="$(ask 'Install it?' 'yes')"
+    case "$ANSWER" in [Nn]*) WITH_SECURITY_AUDIT=no ;; *) WITH_SECURITY_AUDIT=yes ;; esac
+  fi
+fi
+
+if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
+  if ! offer_install npx \
+       "The skills CLI that installs the $SECURITY_AUDIT_SKILL skill runs through it." \
+       "$(pkg_install_cmd npm)" npm; then
+    echo "!! Skipping the $SECURITY_AUDIT_SKILL skill: no npx." >&2
+    WITH_SECURITY_AUDIT=no
+  fi
+fi
+
+if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
+  echo
+  SKILL_TMP="$(mktemp -d)"
+  NPM_CACHE="$(npm config get cache 2>/dev/null || true)"
+  if HOME="$SKILL_TMP/home" CLAUDE_CONFIG_DIR="$SKILL_TMP/claude" \
+       npm_config_cache="${NPM_CACHE:-$HOME/.npm}" DISABLE_TELEMETRY=1 DO_NOT_TRACK=1 \
+       npx --yes "skills@$SKILLS_CLI_VERSION" add "$SECURITY_AUDIT_SOURCE" \
+       --skill "$SECURITY_AUDIT_SKILL" --global --agent claude-code --yes --copy \
+       </dev/null >"$SKILL_TMP/cli.log" 2>&1 \
+     && [ -f "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL/SKILL.md" ]; then
+    SKILL_DIR="$DEST/skills/$SECURITY_AUDIT_SKILL"
+    if [ -d "$SKILL_DIR" ] && diff -r -q "$SKILL_DIR" "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL" >/dev/null 2>&1; then
+      echo "    unchanged  $SKILL_DIR"
+    else
+      if [ -e "$SKILL_DIR" ]; then
+        mkdir -p "$DEST/skill-backups"
+        tar -cf "$DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP" \
+          -C "$DEST/skills" "$SECURITY_AUDIT_SKILL"
+        echo "    backed up  $DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP"
+        rm -rf "$SKILL_DIR"
+      fi
+      mkdir -p "$DEST/skills"
+      cp -R "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL" "$SKILL_DIR"
+      echo "    installed  $SKILL_DIR"
+    fi
+  else
+    echo "!! The skills CLI did not install $SECURITY_AUDIT_SKILL; its output:" >&2
+    sed 's/^/   /' "$SKILL_TMP/cli.log" >&2
+  fi
+  rm -rf "$SKILL_TMP"
 fi
 
 # ----------------------------------------------------------------- statusline

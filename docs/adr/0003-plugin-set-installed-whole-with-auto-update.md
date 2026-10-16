@@ -50,3 +50,9 @@ Introduced in commit `4df83d3`.
 - Supply chain: a compromised or careless upstream release runs on every
   machine with auto-update on. `SECURITY.md` states this; the mitigation is that
   the step is asked about and can be skipped with `--no-plugins`.
+
+## Amendment 2026-10-16
+
+A `PLUGIN_SOURCES` line may now name plugins, and then only those are
+installed. The five marketplaces above still install whole; the official
+marketplace is added with 16 named plugins (ADR-0011).

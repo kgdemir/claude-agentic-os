@@ -35,6 +35,7 @@ cd claude-agentic-os
 - [Install](#install)
 - [What gets installed where](#what-gets-installed-where)
 - [The plugin set](#the-plugin-set)
+- [The security-audit skill](#the-security-audit-skill)
 - [Memory: one database per project](#memory-one-database-per-project)
 - [What the installer changes outside ~/.claude](#what-the-installer-changes-outside-claude)
 - [The statusline](#the-statusline)
@@ -65,8 +66,9 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, plugin-specific rules |
-| **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, which skill or review tool fits a task, plugin-specific rules |
+| **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating — plus 16 named plugins from Anthropic's official marketplace |
+| **Security-audit skill** | Cloudflare's `security-audit` skill in `~/.claude/skills/`, installed with the `skills` CLI |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
 | **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
@@ -89,7 +91,7 @@ Non-interactive:
 ```sh
 ./install.sh --language English --name "Ada Lovelace" --github ada \
              --email ada@example.com --project-root ~/projects \
-             --with-plugins --with-statusline --install-deps -y
+             --with-plugins --with-security-audit --with-statusline --install-deps -y
 ```
 
 | Option | Meaning |
@@ -103,6 +105,7 @@ Non-interactive:
 | `--with-launcher` / `--no-launcher` | Install the optional launcher, or skip the question |
 | `--with-statusline` / `--no-statusline` | Install the statusline, or skip the question |
 | `--with-plugins` / `--no-plugins` | Install the plugin set, or skip the question |
+| `--with-security-audit` / `--no-security-audit` | Install the `security-audit` skill, or skip the question (`-y`: off) |
 | `--install-deps` / `--no-deps` | Install every missing tool (`python3`, `claude`, `jq`, `npm`, …) without asking, or never |
 | `-y`, `--yes` | Accept every detected default, ask nothing |
 | `--prune-backups <N>` | Only clean up: keep the newest N `.backup-<timestamp>` sets in the pack's folders, list the rest and delete them after you type `yes`; never with `-y` or without a terminal; installs nothing |
@@ -162,6 +165,7 @@ only when `settings.json` does not already carry them:
     redis.md                     honest fallback, one connection, TTLs, no KEYS
     github-actions.md            SHA-pinned actions, least privilege, no script injection
     dependency-updates.md        Dependabot/Renovate grouping, majors one at a time
+    skills.md                    which skill, review command or plugin to use for a task
   features/                      read when the project has that feature
     realtime-media.md            WebSocket, SignalR, WebRTC, SFU: docs and hub rules
     ai-models.md                 model docs, output coverage, timeouts, GPU pins
@@ -203,14 +207,16 @@ only when `settings.json` does not already carry them:
                                  when a command breaks a core rule; on
                                  git commit it scans the staged diff and names
                                  only the file and kind of a likely secret
+~/.claude/skills/security-audit/ the security-audit skill (only with --with-security-audit)
+~/.claude/skill-backups/         earlier copies of that skill, as .tar.backup-<timestamp>
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)
 ~/.claude/settings.json          merged, never overwritten; backed up first
 ```
 
 ## The plugin set
 
-With `--with-plugins` (the interactive default is yes) the installer adds five
-marketplaces, installs every plugin each one publishes, enables them, and sets
+With `--with-plugins` (the interactive default is yes) the installer adds six
+marketplaces, installs the plugins listed below, enables them, and sets
 `autoUpdate` so later versions arrive on their own:
 
 | Plugin | Source | What it adds |
@@ -220,9 +226,15 @@ marketplaces, installs every plugin each one publishes, enables them, and sets
 | drywall | `nikhaldi/drywall` | duplicate-code detection |
 | ecc | `https://github.com/affaan-m/ECC.git` | a large agent, skill and hook collection |
 | memsearch | `zilliztech/memsearch` | searchable session memory, one database per project |
+| 16 named plugins | `anthropics/claude-plugins-official` | review and workflow: `code-review`, `pr-review-toolkit`, `code-simplifier`, `feature-dev`, `commit-commands`, `superpowers`, `frontend-design`; security: `security-guidance`; Claude setup: `claude-code-setup`, `claude-md-management`, `plugin-dev`, `skill-creator`; MCP and LSP tools: `context7`, `github`, `playwright`, `typescript-lsp` |
 
-The catalog is read from each marketplace rather than hard-coded, so a plugin
-an upstream repository adds later is installed too, without a change here.
+For the first five, the catalog is read from each marketplace rather than
+hard-coded, so a plugin an upstream repository adds later is installed too,
+without a change here. The official marketplace publishes over 300 plugins, so
+only the named ones are installed (ADR-0011); a name it no longer publishes is
+reported and skipped. Claude Code ships and updates that marketplace itself, so
+no `autoUpdate` entry is written for it. Which of these tools to use for which
+task is in `guides/tools/skills.md`.
 
 It needs the `claude` CLI and `python3`. If either is missing the installer says
 what it is for and offers to install it — `python3` through your package
@@ -243,6 +255,29 @@ Two settings are written for you:
 
 Everything lands in `~/.claude/settings.json` (backed up first), beside whatever
 is already in that file.
+
+## The security-audit skill
+
+With `--with-security-audit` (asked in a terminal, default yes; off under `-y`)
+the installer installs Cloudflare's
+[`security-audit`](https://github.com/cloudflare/security-audit-skill) skill.
+It has no plugin marketplace, so it uses the upstream install path, the `skills`
+npm CLI, pinned to the version in `SKILLS_CLI_VERSION` in `install.sh`:
+
+- The CLI runs with a throwaway `HOME` and `CLAUDE_CONFIG_DIR` and with
+  telemetry off (`DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`), so it writes nothing
+  of yours.
+- The result is compared with `~/.claude/skills/security-audit`. Unchanged:
+  left alone. Changed: the old copy is saved as
+  `~/.claude/skill-backups/security-audit.tar.backup-<timestamp>`, outside
+  `skills/` so it does not load as a second skill, then replaced.
+- It needs `npx` (offered through your package manager as `npm`), git and
+  network access to npm and GitHub. If the CLI fails, its output is printed and
+  the rest of the install goes on.
+
+Re-running the installer is what updates the skill. The skill gives security
+guidance by default and runs its full multi-phase audit only when you ask for
+one (`guides/tools/skills.md`).
 
 ## Memory: one database per project
 

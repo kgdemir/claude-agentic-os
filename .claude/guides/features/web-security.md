@@ -2,6 +2,7 @@
 
 Applies to projects that serve HTML or an API called from a browser. Login, tokens, SSRF and
 cookies: `~/.claude/guides/features/auth.md`. Antiforgery: `~/.claude/guides/stacks/aspnet-core.md`.
+Which security review or audit tool to run: `~/.claude/guides/tools/skills.md`.
 
 - **HTTPS only, with HSTS:** redirect HTTP to HTTPS and send `Strict-Transport-Security: max-age=31536000` (add `includeSubDomains` only after every subdomain serves HTTPS).
   *Why: without HSTS, the first plain-HTTP request can be intercepted and downgraded.*

@@ -69,6 +69,7 @@ with the Read tool before working on that part, and follow it.
 | Project has a web or desktop UI | `~/.claude/guides/features/accessibility.md` |
 | Project serves HTML or an API called from a browser | `~/.claude/guides/features/web-security.md` |
 | Project tags releases, publishes packages or images, or keeps `CHANGELOG.md` | `~/.claude/guides/features/releases.md` |
+| Security review or audit, code review, clean-up, debugging, test-first work, a multi-step plan, or writing a skill, hook or plugin | `~/.claude/guides/tools/skills.md` |
 | caveman plugin active (`CAVEMAN MODE` at session start) | `~/.claude/guides/plugins/caveman.md` |
 | context-mode tools (`ctx_*`) available | `~/.claude/guides/plugins/context-mode.md` |
 | memsearch plugin installed | `~/.claude/guides/plugins/memsearch.md` |

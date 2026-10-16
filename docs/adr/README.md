@@ -15,3 +15,4 @@ renumbered; an accepted ADR is superseded, not rewritten.
 | [0008](0008-preventive-rules-with-a-why-line.md) | Preventive rules carry a Why line until they earn a cost | accepted | 2026-10-14 |
 | [0009](0009-warn-only-bash-command-hook.md) | A warn-only hook for shell commands that break core rules | accepted | 2026-10-15 |
 | [0010](0010-pack-gates-ci-live-sync-and-backup-pruning.md) | Pack gates in one script, CI, a live-sync script and opt-in backup pruning | accepted | 2026-10-15 |
+| [0011](0011-official-plugins-by-name-and-security-audit-skill.md) | Official plugins by name, and the security-audit skill through a pinned skills CLI | accepted | 2026-10-16 |
