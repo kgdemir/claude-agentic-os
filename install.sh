@@ -317,8 +317,14 @@ for OLD in agent-working-rules project-tools project-claude-md project-docs \
 done
 
 # Placeholders are always {{UPPER_CASE}}; guides may quote other {{ }} syntax
-# (GitHub Actions ${{ github.ref }}), which must not count as a leftover.
-LEFTOVER="$(grep -rlE '\{\{[A-Z_]+\}\}' "$DEST" --include='*.md' 2>/dev/null || true)"
+# (GitHub Actions ${{ github.ref }}), which must not count as a leftover. Only
+# the files written above are checked: plugins and skills under $DEST use the
+# same syntax for their own templates. LC_ALL=C because in some locales
+# (Turkish) the range A-Z does not include I.
+LEFTOVER="$(cd "$SRC_DIR/.claude" && find . -type f -name '*.md' | sed 's#^\./##' | sort |
+  while IFS= read -r REL; do
+    LC_ALL=C grep -lE '\{\{[A-Z_]+\}\}' "$DEST/$REL" 2>/dev/null || true
+  done)"
 if [ -n "$LEFTOVER" ]; then
   echo "!! Placeholders left unsubstituted in:" >&2
   printf '   %s\n' $LEFTOVER >&2
