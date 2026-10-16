@@ -32,7 +32,7 @@ without it rather than guessing at a similar name.
 
 ## Git and GitHub
 
-- **`commit-commands` follows the core git rules.** `/commit` stages and commits everything in one step, so use it only when the person asked for a commit and every changed file belongs in it; stage named paths otherwise. `/commit-push-pr` also pushes and opens a PR, so it needs a request for both. `/clean_gone` deletes local branches and worktrees: list them and confirm first (core §9). No AI attribution in any of them.
+- **`commit-commands` follows the core git rules.** `/commit` shows the model the whole diff and lets it stage and commit in one step, so it may stage every changed file: use it only when the person asked for a commit and every changed file belongs in it; stage named paths otherwise. `/commit-push-pr` also pushes and opens a PR, so it needs a request for both. `/clean_gone` deletes local branches and worktrees: list them and confirm first (core §9). No AI attribution in any of them.
   *Why: these commands act in one step with no review pause, so a stray file or a wrong branch is already committed, pushed or deleted before anyone looks.*
 
 ## Claude setup and authoring

@@ -327,7 +327,7 @@ LEFTOVER="$(cd "$SRC_DIR/.claude" && find . -type f -name '*.md' | sed 's#^\./##
   done)"
 if [ -n "$LEFTOVER" ]; then
   echo "!! Placeholders left unsubstituted in:" >&2
-  printf '   %s\n' $LEFTOVER >&2
+  printf '%s\n' "$LEFTOVER" | sed 's/^/   /' >&2
   exit 1
 fi
 
@@ -558,6 +558,8 @@ for source, *only in wanted:
         for missing in [p for p in only if p not in published]:
             print(f"!! {name} does not publish {missing}; skipped", file=sys.stderr)
         break
+    else:
+        print(f"!! no marketplace found for {source}; skipped", file=sys.stderr)
 PY
 )"
 
@@ -696,26 +698,37 @@ fi
 if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
   echo
   SKILL_TMP="$(mktemp -d)"
+  # Read the cache path before the command line below swaps HOME.
   NPM_CACHE="$(npm config get cache 2>/dev/null || true)"
+  [ -n "$NPM_CACHE" ] || NPM_CACHE="$HOME/.npm"
   if HOME="$SKILL_TMP/home" CLAUDE_CONFIG_DIR="$SKILL_TMP/claude" \
-       npm_config_cache="${NPM_CACHE:-$HOME/.npm}" DISABLE_TELEMETRY=1 DO_NOT_TRACK=1 \
+       npm_config_cache="$NPM_CACHE" DISABLE_TELEMETRY=1 DO_NOT_TRACK=1 \
        npx --yes "skills@$SKILLS_CLI_VERSION" add "$SECURITY_AUDIT_SOURCE" \
        --skill "$SECURITY_AUDIT_SKILL" --global --agent claude-code --yes --copy \
        </dev/null >"$SKILL_TMP/cli.log" 2>&1 \
      && [ -f "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL/SKILL.md" ]; then
     SKILL_DIR="$DEST/skills/$SECURITY_AUDIT_SKILL"
-    if [ -d "$SKILL_DIR" ] && diff -r -q "$SKILL_DIR" "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL" >/dev/null 2>&1; then
+    NEW_SKILL="$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL"
+    if [ -L "$SKILL_DIR" ]; then
+      # Someone else's install (the skills CLI links by default). Replacing it
+      # would change their setup, and a tar of a link backs up nothing.
+      echo "!! $SKILL_DIR is a symlink to $(readlink "$SKILL_DIR"); left alone." >&2
+      echo "   Remove the link and re-run to install the pack's copy." >&2
+    elif [ -d "$SKILL_DIR" ] && diff -r -q "$SKILL_DIR" "$NEW_SKILL" >/dev/null 2>&1; then
       echo "    unchanged  $SKILL_DIR"
     else
+      # Copy next to the target first, so a failed copy leaves the old skill
+      # in place; the swap is then a rename on the same file system.
+      mkdir -p "$DEST/skills" "$DEST/skill-backups"
+      STAGED="$DEST/skill-backups/$SECURITY_AUDIT_SKILL.new-$STAMP"
+      cp -R "$NEW_SKILL" "$STAGED"
       if [ -e "$SKILL_DIR" ]; then
-        mkdir -p "$DEST/skill-backups"
         tar -cf "$DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP" \
           -C "$DEST/skills" "$SECURITY_AUDIT_SKILL"
         echo "    backed up  $DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP"
         rm -rf "$SKILL_DIR"
       fi
-      mkdir -p "$DEST/skills"
-      cp -R "$SKILL_TMP/claude/skills/$SECURITY_AUDIT_SKILL" "$SKILL_DIR"
+      mv "$STAGED" "$SKILL_DIR"
       echo "    installed  $SKILL_DIR"
     fi
   else
