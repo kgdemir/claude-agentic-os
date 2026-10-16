@@ -37,14 +37,14 @@ Markdown and the hook scripts into `~/.claude/` and registering the hooks in
 The hooks run on every Agent and Bash call in your sessions. They only add a
 reminder; they never block a command, write a file or use the network. The Bash
 hook runs `git diff --cached` (and `git diff` for `git commit -a`) in the
-command's folder, with a 5-second limit, to look for secret-shaped text. A
+folder the commit runs in (after any `cd` or `git -C`), with a 5-second limit, to look for secret-shaped text. A
 match is reported by file and kind only; the value is never printed, logged or
 stored. To check a commit, tag, PR, issue or release text for AI attribution,
 it also reads the message file named by `-F`/`--file`/`--body-file`/
 `--notes-file`, and the files a `cat … > file` or `cp … file` in the same
 command copies into it: only a regular file (never a pipe or device), at most
-65,536 characters, a relative name resolved against the command's folder and
-any `git -C`. Nothing from it is printed or kept.
+65,536 characters, a relative name resolved against the command's folder as
+moved by any `cd` and `git -C`. Nothing from it is printed or kept.
 
 ## What it never does
 

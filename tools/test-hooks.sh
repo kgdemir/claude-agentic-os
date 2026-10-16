@@ -113,6 +113,11 @@ with tempfile.TemporaryDirectory() as repo:
     with open(os.path.join(repo, "msg.txt"), "w") as fh:
         fh.write("fix: x\n\nCo-Authored-By: Bot <noreply@anthropic.com>\n")
     expect("message file on disk", B, bash("git commit -F msg.txt", repo), "AI attribution")
+    # the scan runs where the commit does: after a `cd`, or under `git -C`
+    parent, name = os.path.split(repo)
+    expect("cd into the repo, then commit", B, bash(f"cd {name} && git commit -m x", parent), "AWS access key")
+    expect("git -C repo commit", B, bash(f"git -C {name} commit -m x", parent), "AWS access key")
+    expect("commit outside the repo", B, bash("git commit -m x", parent), None)
 
 # message files and line continuations: a plain folder, no repository, so the
 # secret scan has nothing to report.
@@ -134,6 +139,13 @@ with tempfile.TemporaryDirectory() as work:
     expect("bundled -a clean", B, bash("git commit -aF clean.md", work), None)
     expect("git -C dir -F file", B, bash("git -C sub commit -F msg.txt", work), "AI attribution")
     expect("git -C dir, file not there", B, bash("git -C sub commit -F m.txt", work), None)
+    expect("cd, then a relative -F", B, bash("cd sub && git commit -F msg.txt", work), "AI attribution")
+    expect("cd, file not in that folder", B, bash("cd sub && git commit -F m.txt", work), None)
+    expect("cd and back, -F of a file written there", B, bash(
+        "cd sub && printf 'fix\\n\\nCo-Authored-By: Bot\\n' > n.txt && cd .. && git commit -F sub/n.txt", work), "AI attribution")
+    expect("cd and back, -F of the name only", B, bash(
+        "cd sub && printf 'fix\\n\\nCo-Authored-By: Bot\\n' > n.txt && cd .. && git commit -F n.txt", work), None)
+    expect("cd in a pipe stage moves nothing", B, bash("cd sub | true; git commit -F m.txt", work), "AI attribution")
     expect("printf > file then -F", B, bash("printf 'fix\\n\\nCo-Authored-By: Bot\\n' > new.txt && git commit -F new.txt", work), "AI attribution")
     expect("printf clean > file then -F", B, bash("printf 'fix: tidy' > new.txt && git commit -F new.txt", work), None)
     expect("cat file > msg then -F", B, bash("cat m.txt > out.txt && git commit -F out.txt", work), "AI attribution")

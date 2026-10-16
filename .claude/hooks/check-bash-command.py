@@ -52,6 +52,7 @@ COMMAND_WRAPPERS = {"sudo", "command", "time", "env", "exec"}
 ANSI_C_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
 # Commands whose output file holds the text of the files they read.
 COPY_COMMANDS = {"cat", "cp"}
+CD_OPTIONS = {"-L", "-P", "-e", "-@", "--"}
 
 # A gate is recognised only as the command a pipe stage runs, never as an
 # argument (`grep x tools/check.sh | head` runs grep, not the gate).
@@ -200,13 +201,33 @@ def pipelines(code: str):
     return [p for p in result if p]
 
 
-def simple_commands(code: str) -> list:
-    """Every simple command's words. Quote-aware when the line parses, so a
-    message line inside quotes is not a command; split by regex otherwise."""
+def after_cd(pipeline: list, folder: str) -> str:
+    """The folder the next command runs in. Only a `cd` that is a pipeline on
+    its own moves it: one inside a pipe runs in a subshell. `cd -` and a
+    folder named through a variable cannot be followed and leave it as is."""
+    words = strip_prefix(pipeline[0]) if len(pipeline) == 1 else []
+    if not words or words[0] != "cd":
+        return folder
+    args = [w for w in words[1:] if w not in CD_OPTIONS]
+    target = args[0] if args else "~"
+    if target == "-" or "$" in target:
+        return folder
+    return os.path.normpath(os.path.join(folder, os.path.expanduser(target)))
+
+
+def simple_commands(code: str, cwd: str = "") -> list:
+    """Every simple command's words, with the folder it runs in (cwd, moved by
+    each `cd`). Quote-aware when the line parses, so a message line inside
+    quotes is not a command; split by regex, without folders, otherwise."""
+    folder = cwd or os.getcwd()
     parsed = pipelines(code)
     if parsed is None:
-        return [tokens(segment) for segment in SEGMENT_SPLIT.split(code)]
-    return [stage for pipeline in parsed for stage in pipeline]
+        return [(tokens(segment), folder) for segment in SEGMENT_SPLIT.split(code)]
+    result = []
+    for pipeline in parsed:
+        result.extend((stage, folder) for stage in pipeline)
+        folder = after_cd(pipeline, folder)
+    return result
 
 
 def is_text_command(stage: list) -> bool:
@@ -258,7 +279,7 @@ def read_message_file(base: str, name: str) -> str:
 
 def git_safety(command: str) -> list:
     found = []
-    for words in simple_commands(command):
+    for words, _ in simple_commands(command):
         call = git_words(words)
         if not call:
             continue
@@ -294,12 +315,21 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
         return "\n".join(bodies[int(n)] for w in words for n in HEREDOC_MARKER_FIND.findall(w)
                          if int(n) < len(bodies))
 
-    written = {}  # file name -> text of the command (and heredoc) that writes it
+    written = {}  # full path -> text of the command (and heredoc) that writes it
 
-    def source(name: str) -> str:
-        return written[name] if name in written else read_message_file(cwd or os.getcwd(), name)
+    def path(folder: str, name: str) -> str:
+        return os.path.normpath(os.path.join(folder, os.path.expanduser(name)))
 
+    def source(folder: str, name: str) -> str:
+        full = path(folder, name)
+        return written[full] if full in written else read_message_file(folder, name)
+
+    folders, folder = [], cwd or os.getcwd()
     for pipeline in parsed:
+        folders.append(folder)
+        folder = after_cd(pipeline, folder)
+
+    for pipeline, folder in zip(parsed, folders):
         for stage in pipeline:
             words = strip_prefix(stage)
             name = words[0].rsplit("/", 1)[-1] if words else ""
@@ -308,19 +338,19 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
             text = " ".join(stage) + "\n" + fed(stage)
             for i, word in enumerate(words[:-1]):
                 if word in {">", ">>"}:
-                    written[words[i + 1]] = text + "".join("\n" + source(f) for f in files)
+                    written[path(folder, words[i + 1])] = text + "".join("\n" + source(folder, f) for f in files)
             if name == "cp" and len(files) > 1:
-                written[files[-1]] = "".join("\n" + source(f) for f in files[:-1])
-    for pipeline in parsed:
+                written[path(folder, files[-1])] = "".join("\n" + source(folder, f) for f in files[:-1])
+    for pipeline, folder in zip(parsed, folders):
         if not any(is_text_command(stage) for stage in pipeline):
             continue
         words = [w for stage in pipeline for w in stage]
         text = " ".join(words) + "\n" + fed(words)
         for stage in pipeline:
             if is_text_command(stage):
-                base = git_base(stage, cwd) if git_words(stage) else (cwd or os.getcwd())
+                base = git_base(stage, folder) if git_words(stage) else folder
                 for name in message_files(stage):
-                    text += "\n" + (written[name] if name in written else read_message_file(base, name))
+                    text += "\n" + source(base, name)
         if ATTRIBUTION.search(text):
             return found
     return []
@@ -337,35 +367,44 @@ def gate_pipe(command: str) -> list:
     return []
 
 
-def commits(command: str) -> list:
-    """Return the argument lists of every `git commit` in the command."""
-    calls = (git_words(words) for words in simple_commands(command))
-    return [args for call in calls if call and call[0] == "commit" for args in [call[1]]]
+def commits(command: str, cwd: str) -> list:
+    """Return (arguments, folder git works in) for every `git commit` in the command."""
+    result = []
+    for words, folder in simple_commands(command, cwd):
+        call = git_words(words)
+        if call and call[0] == "commit":
+            result.append((call[1], git_base(words, folder)))
+    return result
 
 
 def staged_secrets(command: str, cwd: str) -> list:
-    commit_args = commits(command)
-    if not commit_args:
+    found_commits = commits(command, cwd)
+    if not found_commits:
         return []
+    commit_args = [args for args, _ in found_commits]
+    bases = sorted({base for _, base in found_commits})
     diffs = [["git", "diff", "--cached", "-U0", "--no-color"]]
     if any(a == "--all" or (a.startswith("-") and not a.startswith("--") and "a" in a) for args in commit_args for a in args):
         diffs.append(["git", "diff", "-U0", "--no-color"])
     hits = set()
-    for diff in diffs:
-        try:
-            out = subprocess.run(diff, cwd=cwd or None, capture_output=True, text=True,
-                                 timeout=GIT_TIMEOUT_SECONDS, check=False).stdout
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"check-bash-command: secret scan skipped: {exc}", file=sys.stderr)
-            return []
-        current = "?"
-        for line in out.splitlines():
-            if line.startswith("+++ "):
-                current = line[6:] if line.startswith("+++ b/") else line[4:]
-            elif line.startswith("+"):
-                for name, pattern in SECRETS:
-                    if pattern.search(line):
-                        hits.add(f"{current}: {name}")
+    for base in bases:
+        if not os.path.isdir(base):
+            continue  # no such folder: the commit cannot run there either
+        for diff in diffs:
+            try:
+                out = subprocess.run(diff, cwd=base, capture_output=True, text=True,
+                                     timeout=GIT_TIMEOUT_SECONDS, check=False).stdout
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"check-bash-command: secret scan skipped in {base}: {exc}", file=sys.stderr)
+                break
+            current = "?"
+            for line in out.splitlines():
+                if line.startswith("+++ "):
+                    current = line[6:] if line.startswith("+++ b/") else line[4:]
+                elif line.startswith("+"):
+                    for name, pattern in SECRETS:
+                        if pattern.search(line):
+                            hits.add(f"{current}: {name}")
     if not hits:
         return []
     return ["staged changes look like secrets (" + "; ".join(sorted(hits)) + "); read `git diff --cached`, "
