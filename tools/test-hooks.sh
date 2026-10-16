@@ -119,10 +119,20 @@ with tempfile.TemporaryDirectory() as work:
     expect("git -C dir, file not there", B, bash("git -C sub commit -F m.txt", work), None)
     expect("printf > file then -F", B, bash("printf 'fix\\n\\nCo-Authored-By: Bot\\n' > new.txt && git commit -F new.txt", work), "AI attribution")
     expect("printf clean > file then -F", B, bash("printf 'fix: tidy' > new.txt && git commit -F new.txt", work), None)
+    expect("cat file > msg then -F", B, bash("cat m.txt > out.txt && git commit -F out.txt", work), "AI attribution")
+    expect("cat clean > msg then -F", B, bash("cat clean.md > out.txt && git commit -F out.txt", work), None)
+    expect("cp file then -F", B, bash("cp notes.md out.md && gh pr create --body-file out.md", work), "AI attribution")
+    expect("cp clean then -F", B, bash("cp clean.md out.md && gh pr create --body-file out.md", work), None)
 expect("trailer on a continued line", B, bash('git commit -m "fix" \\\n  --trailer "Co-authored-by: Bot"'), "AI attribution")
 expect("clean continued commit", B, bash('git commit -m "fix" \\\n  --signoff'), None)
 expect("force push on a continued line", B, bash("git push origin main \\\n  --force"), "--force-with-lease")
 expect("gate pipe on a continued line", B, bash("npm test \\\n  | tail -1"), "pipefail")
+expect("trailer on a CRLF-continued line", B, bash('git commit -m "fix" \\\r\n  --trailer "Co-authored-by: Bot"'), "AI attribution")
+expect("clean CRLF-continued commit", B, bash('git commit -m "fix" \\\r\n  --signoff'), None)
+# $'...' quoting: read as one word, not as unbalanced quotes
+expect("attribution in $'...'", B, bash("git commit -m $'fix\\n\\nCo-Authored-By: Bot'"), "AI attribution")
+expect("$'...' next to an unrelated mention", B, bash("""printf $'a\\'b'; grep -rn "Co-Authored-By:" docs; git commit -m "fix: tidy\""""), None)
+expect("$ inside single quotes is not $'...'", B, bash("""echo 'cost $' && git commit -m 'fix: tidy'"""), None)
 
 # robustness: never break a session
 expect("other tool", B, {"tool_name": "Read", "tool_input": {"file_path": "x"}}, None)
