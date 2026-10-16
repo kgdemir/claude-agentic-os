@@ -15,9 +15,13 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
   *Why: a summary that reads as done is acted on as done; the skipped step surfaces later, in someone else's run.*
 - **Prove a test fails without its fix.** Remove the guard or revert the fix, re-run, confirm red, restore. A test that cannot fail is not coverage.
   *Cost: a concurrency test passed with the guard removed — the in-memory database serialized every command, so there was no seam to interleave.*
+- **Give a multi-step task a plan with a check per step.** Before starting, write the steps and, for each, the check that proves it done: the test, gate or command, and the result expected. "Make it work" is not a check.
+  *Why: without a named check, "done" means "looks done", and a step that never worked is found only at the end, under the steps built on it.*
 
-## 2. Diagnosis
+## 2. Diagnosis and ambiguity
 
+- **Name the assumption before building on it.** When a request has two readings that lead to different code, ask through `AskUserQuestion` before writing it. When one reading is clear enough to act on, act, and state the assumption in the reply. When a simpler way reaches the same goal, say so before building the harder one.
+  *Why: a silent guess becomes a finished diff that the person has to read to find out it was the wrong guess, then undo.*
 - **No speculative fixes.** When a bug reproduces, find the mechanism that predicts the *observed detail*: how many times the error prints, where in the output, in what order. A plausible story that explains "roughly this" is not a diagnosis.
 - **Unchanged output disproves the diagnosis.** If a shipped fix does not change the output at all, stop and re-diagnose rather than layering the next theory on the last one.
   *Cost: four attempts at one error, three of them speculative, each committed and each needing a manual run against a live server. None changed a single line of output.*
@@ -57,8 +61,10 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
 
 - **No lint-disable comments without approval.** When a rule fires, fix the cause. If a disable is genuinely needed, ask first (via `AskUserQuestion`) — naming the rule, the line and why a real fix is not feasible — and, once approved, put the reason in a comment directly above it. Disables accumulate as debt and hide real problems.
 - **Compiler and linter warnings are errors.** A build with warnings is not a clean build.
-- **Change only what was asked.** No drive-by refactors, renames or reformatting outside the task. Problems noticed on the way are reported, not fixed.
+- **Change only what was asked.** No drive-by refactors, renames or reformatting outside the task. Match the surrounding style, even where you would write it differently. Remove the imports, variables and functions that your own change left unused; dead code that was already there is reported, not deleted. Problems noticed on the way are reported, not fixed.
   *Why: unrequested changes hide the real change in review and break things nobody asked to touch.*
+- **Simplest code that does the task.** No features, options or settings nobody asked for, no abstraction with a single caller, no error handling for a case the code cannot reach. If the same result fits in a much shorter diff, shorten it before showing it.
+  *Why: speculative code still has to be read, tested and kept working, and it is usually wrong about the future it was written for.*
 - **No swallowed errors.** No empty `catch`/`except`, no catch that only returns a default. Log with enough context to find the cause, or rethrow.
   *Why: a swallowed error turns a crash with a stack trace into wrong output with no trace.*
 - **No magic numbers or strings.** Any literal that is not self-evident becomes a named constant; shared ones are exported from one place.
