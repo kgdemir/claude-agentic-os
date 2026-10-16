@@ -30,6 +30,10 @@ tools/check-guides.sh
 step "trial install"
 TRIAL="$(mktemp -d)"
 trap 'rm -rf "$TRIAL"' EXIT
+# A plugin file of the person's own that uses {{UPPER}} syntax must not stop a
+# re-run: the installer checks only the files it wrote.
+mkdir -p "$TRIAL/plugins/someone-else"
+printf 'Fill in {{AGENT_NAME}}.\n' >"$TRIAL/plugins/someone-else/SKILL.md"
 CLAUDE_HOME="$TRIAL" ./install.sh -y --language English --name "Trial Owner" --github trial \
   --email trial@example.com --project-root "$TRIAL/projects" --with-project-location \
   --no-plugins --no-launcher --no-statusline --no-deps </dev/null >"$TRIAL/install.log" 2>&1 || {
@@ -37,7 +41,7 @@ CLAUDE_HOME="$TRIAL" ./install.sh -y --language English --name "Trial Owner" --g
   echo "!! trial install failed" >&2
   exit 1
 }
-if grep -rlE '\{\{[A-Z_]+\}\}' "$TRIAL" --include='*.md'; then
+if LC_ALL=C grep -rlE '\{\{[A-Z_]+\}\}' "$TRIAL" --include='*.md' --exclude-dir=plugins; then
   echo "!! placeholders left unfilled in the files above" >&2
   exit 1
 fi
