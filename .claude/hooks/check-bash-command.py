@@ -173,11 +173,6 @@ def git_base(stage: list, cwd: str) -> str:
     return base
 
 
-def git_call(segment: str):
-    """Return (subcommand, args) when the segment runs git, else None."""
-    return git_words(tokens(segment))
-
-
 def pipelines(code: str):
     """Split a command line into pipelines, each a list of stages (word lists).
     Return None when it cannot be tokenised."""
@@ -203,6 +198,15 @@ def pipelines(code: str):
     stages.append(stage)
     result.append([s for s in stages if s])
     return [p for p in result if p]
+
+
+def simple_commands(code: str) -> list:
+    """Every simple command's words. Quote-aware when the line parses, so a
+    message line inside quotes is not a command; split by regex otherwise."""
+    parsed = pipelines(code)
+    if parsed is None:
+        return [tokens(segment) for segment in SEGMENT_SPLIT.split(code)]
+    return [stage for pipeline in parsed for stage in pipeline]
 
 
 def is_text_command(stage: list) -> bool:
@@ -254,8 +258,8 @@ def read_message_file(base: str, name: str) -> str:
 
 def git_safety(command: str) -> list:
     found = []
-    for segment in SEGMENT_SPLIT.split(command):
-        call = git_call(segment)
+    for words in simple_commands(command):
+        call = git_words(words)
         if not call:
             continue
         sub, args = call
@@ -283,6 +287,8 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
     parsed = pipelines(code)
     if parsed is None:
         return found if TEXT_COMMANDS.search(command) and ATTRIBUTION.search(command) else []
+    if not any(is_text_command(stage) for pipeline in parsed for stage in pipeline):
+        return []  # nothing here carries text, so no file needs reading
 
     def fed(words: list) -> str:
         return "\n".join(bodies[int(n)] for w in words for n in HEREDOC_MARKER_FIND.findall(w)
@@ -333,7 +339,7 @@ def gate_pipe(command: str) -> list:
 
 def commits(command: str) -> list:
     """Return the argument lists of every `git commit` in the command."""
-    calls = (git_call(segment) for segment in SEGMENT_SPLIT.split(command))
+    calls = (git_words(words) for words in simple_commands(command))
     return [args for call in calls if call and call[0] == "commit" for args in [call[1]]]
 
 
