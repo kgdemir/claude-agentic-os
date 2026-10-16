@@ -46,8 +46,12 @@ MESSAGE_FILE_OPTIONS = {"-F", "--file", "--body-file", "--notes-file"}
 # Short options that take a value, so a bundle stops there (`-mF` is message "F").
 SHORT_OPTIONS_WITH_VALUE = set("mCct")
 # A backslash at the end of a line continues the command on the next one.
-LINE_CONTINUATION = re.compile(r"\\\n")
+LINE_CONTINUATION = re.compile(r"\\\r?\n")
 COMMAND_WRAPPERS = {"sudo", "command", "time", "env", "exec"}
+# Escapes inside bash `$'...'` that the checks need decoded; any other `\x` is x.
+ANSI_C_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
+# Commands whose output file holds the text of the files they read.
+COPY_COMMANDS = {"cat", "cp"}
 
 # A gate is recognised only as the command a pipe stage runs, never as an
 # argument (`grep x tools/check.sh | head` runs grep, not the gate).
@@ -100,6 +104,41 @@ def split_heredocs(command: str):
         return HEREDOC_MARKER.format(len(bodies) - 1) + match.group(3)
 
     return HEREDOC.sub(cut, command), bodies
+
+
+def ansi_c_quotes(code: str) -> str:
+    """Rewrite each bash `$'...'` word as a plain single-quoted one, which shlex
+    reads; left as is, its `\'` looks like unbalanced quotes."""
+    out, i, quote = [], 0, None
+    while i < len(code):
+        ch = code[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < len(code):
+                out.append(code[i + 1])
+                i += 1
+            elif ch == quote:
+                quote = None
+        elif ch == "\\" and i + 1 < len(code):
+            out.append(code[i:i + 2])
+            i += 1
+        elif code.startswith("$'", i):
+            text, i = [], i + 2
+            while i < len(code) and code[i] != "'":
+                if code[i] == "\\" and i + 1 < len(code):
+                    i += 1
+                    text.append(ANSI_C_ESCAPES.get(code[i], code[i]))
+                else:
+                    text.append(code[i])
+                i += 1
+            out.append(shlex.quote("".join(text)))
+        elif ch in "'\"":
+            quote = ch
+            out.append(ch)
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def strip_prefix(words: list) -> list:
@@ -250,11 +289,22 @@ def attribution(command: str, code: str, bodies: list, cwd: str) -> list:
                          if int(n) < len(bodies))
 
     written = {}  # file name -> text of the command (and heredoc) that writes it
+
+    def source(name: str) -> str:
+        return written[name] if name in written else read_message_file(cwd or os.getcwd(), name)
+
     for pipeline in parsed:
         for stage in pipeline:
-            for i, word in enumerate(stage[:-1]):
+            words = strip_prefix(stage)
+            name = words[0].rsplit("/", 1)[-1] if words else ""
+            redirect = next((i for i, w in enumerate(words) if w in {">", ">>", "<"}), len(words))
+            files = [w for w in words[1:redirect] if not w.startswith("-")] if name in COPY_COMMANDS else []
+            text = " ".join(stage) + "\n" + fed(stage)
+            for i, word in enumerate(words[:-1]):
                 if word in {">", ">>"}:
-                    written[stage[i + 1]] = " ".join(stage) + "\n" + fed(stage)
+                    written[words[i + 1]] = text + "".join("\n" + source(f) for f in files)
+            if name == "cp" and len(files) > 1:
+                written[files[-1]] = "".join("\n" + source(f) for f in files[:-1])
     for pipeline in parsed:
         if not any(is_text_command(stage) for stage in pipeline):
             continue
@@ -325,7 +375,7 @@ def warnings(event: object) -> list:
         return []
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else ""
     code, bodies = split_heredocs(command)
-    code = LINE_CONTINUATION.sub(" ", code)
+    code = ansi_c_quotes(LINE_CONTINUATION.sub(" ", code))
     return (git_safety(code) + attribution(command, code, bodies, cwd) + gate_pipe(code)
             + staged_secrets(code, cwd))
 
