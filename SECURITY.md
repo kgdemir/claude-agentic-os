@@ -23,16 +23,22 @@ It is an installer, so read it before you run it. In full it can:
   `sudo zypper` or `sudo pacman`, after asking;
 - run `curl -fsSL https://claude.ai/install.sh | bash` to install Claude Code,
   after asking;
-- add plugin marketplaces from the five GitHub repositories named in the README
-  and install the plugins they publish, which is third-party code that then runs
+- add plugin marketplaces from the six GitHub repositories named in the README
+  and install the plugins they publish (from Anthropic's official marketplace,
+  only the 16 the README names), which is third-party code that then runs
   inside your Claude Code sessions;
+- run `npx skills@<pinned version> add` to fetch Cloudflare's `security-audit`
+  skill from GitHub, after asking: the CLI runs with a throwaway `HOME` and
+  config folder and telemetry off, and the installer copies the result into
+  `~/.claude/skills/security-audit`, backing up a changed copy as a tar file in
+  `~/.claude/skill-backups/` first;
 - append a function to your shell rc, set your global git identity and start an
   interactive login — each asked separately, and each declined automatically
   when there is no terminal or when `-y` is passed.
 
-`--no-plugins --no-launcher --no-statusline --no-deps` reduces it to writing
-Markdown and the hook scripts into `~/.claude/` and registering the hooks in
-`settings.json`.
+`--no-plugins --no-security-audit --no-launcher --no-statusline --no-deps`
+reduces it to writing Markdown and the hook scripts into `~/.claude/` and
+registering the hooks in `settings.json`.
 
 The hooks run on every Agent and Bash call in your sessions. They only add a
 reminder; they never block a command, write a file or use the network. The Bash
@@ -53,17 +59,23 @@ moved by any `cd` and `git -C`. Nothing from it is printed or kept.
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and, when you ask for it,
   `ECC_DISABLED_HOOKS`.
 - It never sends anything anywhere. The only network access is the package
-  manager, the Claude Code installer and the plugin marketplaces.
+  manager, the Claude Code installer, the plugin marketplaces, and npm and
+  GitHub for the `security-audit` skill.
 - It never deletes a file during an install. Replacements are backed up first,
   and guides from the old flat layout are renamed to
-  `<name>.backup-<timestamp>`, not removed. The one deleting path is
+  `<name>.backup-<timestamp>`, not removed. A changed `security-audit` skill
+  folder is removed only after its tar backup is written. The one deleting
+  path is
   `--prune-backups <N>`, which only removes `.backup-<timestamp>` files in the
   pack's own folders, lists them first, and needs `yes` typed in a terminal.
 
 ## Third-party trust
 
-The five marketplaces are other people's repositories, installed with
-`autoUpdate` on, which means later versions arrive without review. That is a
-convenience decision, not a security one. If you would rather pin what runs,
+The five community marketplaces are other people's repositories, installed
+with `autoUpdate` on, which means later versions arrive without review. The
+official marketplace is updated by Claude Code itself. The `security-audit`
+skill is whatever its upstream repository holds when the installer runs; only
+the `skills` CLI version is pinned, and re-running the installer is what
+updates the skill. That is a convenience decision, not a security one. If you would rather pin what runs,
 install with `--no-plugins` and add the plugins yourself, or turn `autoUpdate`
 off for each marketplace in `~/.claude/settings.json` afterwards.

@@ -2,6 +2,7 @@
 
 Applies to projects with login, tokens or sessions, directory (LDAP/AD) lookups, or code that fetches
 URLs a user or another system supplied. Logging of tokens: `~/.claude/guides/features/observability.md`.
+Which security review or audit tool to run: `~/.claude/guides/tools/skills.md`.
 
 - **A user-supplied URL is checked on every hop.** Follow redirects by hand and re-check each hop and each derived link (scheme `https`, public host, no private, loopback or link-local address after DNS resolution) — not only the first request. Prefer an allow-list of hosts when the set is known.
   *Cost: a fetcher checked only the first URL, so a redirect could still lead it to an internal address (SSRF).*
