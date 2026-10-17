@@ -726,14 +726,28 @@ if [ "$WITH_SECURITY_AUDIT" = "yes" ]; then
       mkdir -p "$DEST/skills" "$DEST/skill-backups"
       STAGED="$DEST/skill-backups/$SECURITY_AUDIT_SKILL.new-$STAMP"
       cp -R "$NEW_SKILL" "$STAGED"
+      # The old copy is moved aside, not deleted, until the new one is in
+      # place: if that rename fails, the old copy goes back.
+      OLD_SKILL=""
       if [ -e "$SKILL_DIR" ]; then
         tar -cf "$DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP" \
           -C "$DEST/skills" "$SECURITY_AUDIT_SKILL"
         echo "    backed up  $DEST/skill-backups/$SECURITY_AUDIT_SKILL.tar.backup-$STAMP"
-        rm -rf "$SKILL_DIR"
+        OLD_SKILL="$DEST/skill-backups/$SECURITY_AUDIT_SKILL.old-$STAMP"
+        mv "$SKILL_DIR" "$OLD_SKILL"
       fi
-      mv "$STAGED" "$SKILL_DIR"
+      if ! mv "$STAGED" "$SKILL_DIR"; then
+        if [ -n "$OLD_SKILL" ] && mv "$OLD_SKILL" "$SKILL_DIR"; then
+          echo "!! Could not move the new $SECURITY_AUDIT_SKILL into place; the old copy is restored." >&2
+        elif [ -n "$OLD_SKILL" ]; then
+          echo "!! Could not move the new $SECURITY_AUDIT_SKILL into place, nor the old copy back; it is in $OLD_SKILL." >&2
+        else
+          echo "!! Could not move $SECURITY_AUDIT_SKILL into $SKILL_DIR." >&2
+        fi
+        exit 1
+      fi
       STAGED=""
+      [ -z "$OLD_SKILL" ] || rm -rf "$OLD_SKILL"
       echo "    installed  $SKILL_DIR"
     fi
   else
