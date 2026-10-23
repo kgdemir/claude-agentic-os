@@ -308,6 +308,48 @@ if command -v ccusage >/dev/null 2>&1 && [ "$HAS_JQ" -eq 1 ]; then
   fi
 fi
 
+# ---- plan usage limits (5-hour and weekly) ----
+# Claude Code sends rate_limits on Pro/Max logins; it is null for an API key,
+# Bedrock or Vertex, and then this line is left out. used_percentage is 0-100,
+# resets_at is epoch seconds. These are the server numbers /usage shows.
+limit_color() {
+  if   (( $1 <= 10 )); then LCLR='38;5;210'  # light pink
+  elif (( $1 <= 25 )); then LCLR='38;5;228'  # light yellow
+  else                      LCLR='38;5;194'; fi  # light green
+  if [ "$use_color" -eq 1 ]; then printf '\033[%sm' "$LCLR"; fi
+}
+# One window, e.g. "5h: 34% used, 66% left [===-------] resets 17:00 (2h 10m)"
+fmt_limit() {
+  lim_label="$1"; lim_used="$2"; lim_reset="${3%.*}"
+  [[ "$lim_used" =~ ^[0-9.]+$ ]] || return
+  lim_used=$(echo "$lim_used" | LC_ALL=C awk '{printf "%d", $1 + 0.5}'); ((lim_used>100))&&lim_used=100
+  lim_left=$(( 100 - lim_used ))
+  lim_txt="${lim_label}: ${lim_used}% used, ${lim_left}% left [$(progress_bar "$lim_used" 10)]"
+  if [[ "$lim_reset" =~ ^[0-9]+$ ]]; then
+    lim_secs=$(( lim_reset - $(date +%s) )); (( lim_secs<0 )) && lim_secs=0
+    lim_d=$(( lim_secs / 86400 )); lim_h=$(( (lim_secs % 86400) / 3600 )); lim_m=$(( (lim_secs % 3600) / 60 ))
+    if (( lim_d > 0 )); then
+      lim_txt="$lim_txt resets in ${lim_d}d ${lim_h}h"
+    else
+      lim_txt="$lim_txt resets $(fmt_time_hm "$lim_reset") (${lim_h}h ${lim_m}m)"
+    fi
+  fi
+  printf '%s%s%s' "$(limit_color "$lim_left")" "$lim_txt" "$(rst)"
+}
+limits_line=""
+if [ "$HAS_JQ" -eq 1 ]; then
+  five_txt=$(fmt_limit "5h" \
+    "$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)" \
+    "$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null)")
+  week_txt=$(fmt_limit "7d" \
+    "$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)" \
+    "$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)")
+  [ -n "$five_txt" ] && limits_line="🔋 $five_txt"
+  if [ -n "$week_txt" ]; then
+    if [ -n "$limits_line" ]; then limits_line="$limits_line  📅 $week_txt"; else limits_line="📅 $week_txt"; fi
+  fi
+fi
+
 # ---- logged-in account email (from ~/.claude.json) ----
 account_email=""
 account_color() { if [ "$use_color" -eq 1 ]; then printf '\033[38;5;114m'; fi; }  # green
@@ -375,6 +417,9 @@ line2=""
 if [ -n "$context_pct" ]; then
   context_bar=$(progress_bar "$context_remaining_pct" 10)
   line2="🧠 $(context_color)Context Remaining: ${context_pct} [${context_bar}]$(rst)"
+fi
+if [ -n "$limits_line" ]; then
+  if [ -n "$line2" ]; then line2="$line2  $limits_line"; else line2="$limits_line"; fi
 fi
 if [ -n "$session_txt" ]; then
   if [ -n "$line2" ]; then
