@@ -342,6 +342,12 @@ bun, .NET SDK, Claude Code) through whichever package manager the machine has,
 sets up a memsearch virtual environment, and fast-forwards the repository's
 default branch. It supports macOS and Linux.
 
+On every launch it upgrades the `memsearch` Python package in that venv
+(`uv pip install --upgrade "memsearch[onnx]"`, about 1s when nothing changed).
+The plugin updates itself through the marketplace, but the package does not, and
+the plugin's start-up hook prints `UPDATE: ... available` while PyPI is ahead.
+A failed upgrade only warns when a copy is already installed.
+
 It is opt-in because it installs software and touches your working tree. What it
 will and will not do:
 

@@ -310,8 +310,18 @@ fi
 # shellcheck source=/dev/null
 source "$VENV_DIR/bin/activate"
 
-if ! uv pip show --python "$VENV_DIR/bin/python" memsearch >/dev/null 2>&1; then
-  uv pip install --python "$VENV_DIR/bin/python" "memsearch[onnx]"
+# Upgrade on every launch: the memsearch plugin updates itself through the
+# marketplace, but the Python package it calls lives here, and the plugin's
+# session-start hook prints "UPDATE: ... available" whenever PyPI is ahead.
+# An upgrade that fails (offline, index down) only warns while an installed
+# copy exists; with none installed the hooks cannot run, so stop.
+if ! uv pip install --quiet --python "$VENV_DIR/bin/python" --upgrade "memsearch[onnx]"; then
+  if uv pip show --python "$VENV_DIR/bin/python" memsearch >/dev/null 2>&1; then
+    echo "==> memsearch upgrade failed; keeping the installed version" >&2
+  else
+    echo "==> memsearch install failed and no copy is installed" >&2
+    exit 1
+  fi
 fi
 
 # -----------------------------
