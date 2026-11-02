@@ -13,6 +13,8 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
 - **Never claim a gate is green without having run it in that state.** Re-run after the last edit, not before it.
 - **Report what did not run.** Name every gate not run, every step skipped and every check that could not be done here. Never write "should work" about code that was not run.
   *Why: a summary that reads as done is acted on as done; the skipped step surfaces later, in someone else's run.*
+- **Give clock times in the user's local time zone.** Get them with plain `date`, never `date -u`. When the machine's zone is not the user's (cloud session, container, remote host), use `TZ=<user zone> date`; when the user's zone is unknown, ask once. Convert UTC timestamps from logs, CI or APIs before quoting them. When the zone is unclear, write it next to the time (`11:21 +03`).
+  *Cost: times read with `date -u` were reported as local, 3 hours behind; every time given in the session was wrong, including an estimated timeout.*
 - **Prove a test fails without its fix.** Remove the guard or revert the fix, re-run, confirm red, restore. A test that cannot fail is not coverage.
   *Cost: a concurrency test passed with the guard removed — the in-memory database serialized every command, so there was no seam to interleave.*
 - **Give a multi-step task a plan with a check per step.** Before starting, write the steps and, for each, the check that proves it done: the test, gate or command, and the result expected. "Make it work" is not a check.
