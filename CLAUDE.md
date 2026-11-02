@@ -27,6 +27,9 @@ per-person placeholders and installs them into `~/.claude`.
   `~/.claude`, answers from the gitignored `tools/sync-live.local` (ADR-0010).
 - `tools/check-values.sh` — fails when `README.md` or the guide quote a settings value
   that differs from `install.sh` (ADR-0005).
+- `tools/cleanup-cache.sh [--apply]` — owner's machine housekeeping (pip/uv,
+  dotnet bin/obj, NuGet, npm caches; snap/apt with sudo). Not part of the pack;
+  `~/cleanup-cache.sh` symlinks here, run by `cleanup-cache.timer` and cron.
 - `bash -n install.sh` — syntax check.
 - `python3 -m py_compile .claude/hooks/*.py` — hook syntax check (remove the
   `__pycache__` it leaves; `tools/check.sh` does not leave one).
