@@ -6,8 +6,10 @@
 #   ./cleanup-cache.sh --apply         # actually delete
 #   ./cleanup-cache.sh --apply --code-root ~/projects   # limit dotnet clean to that tree
 #
-# The dotnet step searches for .sln/.csproj under --code-root (default: $HOME),
-# runs 'dotnet clean' on each, then removes leftover bin/obj directories.
+# The dotnet step searches for .sln/.csproj under --code-root (default: $HOME)
+# and removes the bin/obj directories next to each project. --dotnet-clean also
+# runs 'dotnet clean' first; that evaluates MSBuild, which can run any code a
+# project file holds, so use it only on trees you trust.
 #
 # Sections can be skipped with --no-snap, --no-pip, --no-nuget, --no-dotnet,
 # --no-npm, --no-apt.
@@ -17,6 +19,7 @@ set -euo pipefail
 APPLY=0
 CODE_ROOT=""
 DO_SNAP=1 DO_PIP=1 DO_NUGET=1 DO_DOTNET=1 DO_NPM=1 DO_APT=1
+DOTNET_CLEAN=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -26,9 +29,10 @@ while [ $# -gt 0 ]; do
         --no-pip)     DO_PIP=0 ;;
         --no-nuget)   DO_NUGET=0 ;;
         --no-dotnet)  DO_DOTNET=0 ;;
+        --dotnet-clean) DOTNET_CLEAN=1 ;;
         --no-npm)     DO_NPM=0 ;;
         --no-apt)     DO_APT=0 ;;
-        -h|--help)    sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help)    sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -125,13 +129,18 @@ if [ "$DO_DOTNET" -eq 1 ]; then
             echo "no solutions or projects found under $root"
         fi
 
-        for t in "${targets[@]}"; do
-            echo "-- $t"
-            # dotnet clean only removes what the last build configuration
-            # produced, so sweep both common configurations.
-            run_soft dotnet clean "$t" -c Debug --nologo -v quiet
-            run_soft dotnet clean "$t" -c Release --nologo -v quiet
-        done
+        # Opt-in only: dotnet clean evaluates MSBuild, so a project file in any
+        # tree under $root could run code. Deleting bin/obj below needs no
+        # evaluation and frees the same space.
+        if [ "$DOTNET_CLEAN" -eq 1 ]; then
+            for t in "${targets[@]}"; do
+                echo "-- $t"
+                # dotnet clean only removes what the last build configuration
+                # produced, so sweep both common configurations.
+                run_soft dotnet clean "$t" -c Debug --nologo -v quiet
+                run_soft dotnet clean "$t" -c Release --nologo -v quiet
+            done
+        fi
 
         # dotnet clean leaves the bin/obj shells and any output from other
         # configurations or TFMs behind; remove them next to each project.
