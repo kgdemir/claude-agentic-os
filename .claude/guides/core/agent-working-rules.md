@@ -77,6 +77,10 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
 - **One fact per memory file, with an index of pointers.** Never inline content into the index, and leave no file the index does not reference.
 - **Keep `MEMORY.md` inside its load limit.** Only the first 200 lines or 25KB load at session start, whichever comes first; the rest is dropped. One line per entry, about 150 characters: title plus the hook needed to judge relevance. Commit hashes, PR numbers and other detail go in the topic file. After every memory write, check `wc -lc MEMORY.md`; near the limit, shorten the longest lines first (`awk '{print length, NR}' MEMORY.md | sort -rn | head`), then merge or drop stale entries. When a memory is merged, superseded or wrong, delete its file and its index line together.
   *Cost: an index grew to 25KB; its last 4 of 126 lines were cut and those memories never loaded.*
+- **Group rarely read memories instead of dropping them.** When `MEMORY.md` is still near the limit after shortening, move similar or rarely read entries into a group file (`group-<topic>.md`) that keeps their one-line pointers, and replace them in `MEMORY.md` with one line whose hook names what the group holds. A fact listed in a group file counts as referenced. Find the rarely read ones with `python3 ~/.claude/hooks/log-usage.py --report memory <memory dir>`, which totals the reads that hook logs (ADR-0012). Never group a rule that must apply every session. 0 reads means "never opened", not "unused": a memory whose index line was enough is never opened.
+  *Why: deleting entries to fit the limit loses facts; a group keeps them one read away.*
+- **Every file loaded at session start gets the same discipline.** A handoff buffer, a session summary or any other index injected into each session: one short line per entry, detail in its own file that the line points to, a size check after each write.
+  *Why: these files grow one session at a time, and every line is paid for in every session, used or not.*
 - **Memory is context, not truth.** Verify anything a stored note claims about the code against the code before acting on it.
 
 ## 9. Safety
