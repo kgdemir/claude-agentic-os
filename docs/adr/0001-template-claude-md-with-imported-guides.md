@@ -13,7 +13,7 @@ projects directory, so a copy made for one person is wrong for the next. Claude
 Code loads `~/.claude/CLAUDE.md` in every session and follows `@path` imports
 from it.
 
-Introduced in commit `4df83d3`.
+Introduced in commit `9583c37`.
 
 ## Decision
 

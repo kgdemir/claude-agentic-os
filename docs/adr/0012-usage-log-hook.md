@@ -16,7 +16,7 @@ The rules in `agent-working-rules.md` §8 (group rarely read memories) and
 `tools/skills.md` (prune plugins and guides) need to know what is rarely used.
 Without data, that is a guess.
 
-Introduced in commit `2deb277`.
+Introduced in commit `4023787`.
 
 ## Decision
 
@@ -86,7 +86,7 @@ Introduced in commit `2deb277`.
 
 ## Amendment 2026-11-09
 
-After a review of `2deb277` (fixed in `312a3bd`):
+After a review of `4023787` (fixed in `5fbe5f6`):
 - Log lines start with Unix time (whole seconds, UTC) instead of a local ISO
   time, so times compare as numbers across time zones; the reports show them
   in local time.
@@ -102,7 +102,7 @@ After a review of `2deb277` (fixed in `312a3bd`):
 
 ## Amendment 2026-11-09 (second review)
 
-After a review of `312a3bd`:
+After a review of `5fbe5f6`:
 - An empty, unreadable or out-of-range time makes its line a bad line: skipped
   and counted on stderr, never a use and never a report crash. Lines with the
   local ISO time of the first release are still read.

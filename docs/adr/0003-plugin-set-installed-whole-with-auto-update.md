@@ -11,7 +11,7 @@ context-mode (sandboxed search/execute), drywall (duplicate detection), ecc
 (agents, skills, hooks) and memsearch (per-project memory). Setting them up by
 hand on each machine drifts: different plugins, different versions.
 
-Introduced in commit `4df83d3`.
+Introduced in commit `9583c37`.
 
 ## Decision
 

@@ -11,7 +11,7 @@ Claude keeps facts it learns between sessions in two places: file memory under
 database. One person works on many unrelated repositories. A search over a
 shared store returns the best textual match, whichever repository it came from.
 
-Introduced in commit `4df83d3`.
+Introduced in commit `9583c37`.
 
 ## Decision
 

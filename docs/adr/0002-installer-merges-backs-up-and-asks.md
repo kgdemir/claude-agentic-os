@@ -12,7 +12,7 @@ It is also run unattended (CI, `-y`, piped from `curl`). An installer that
 overwrites a working setup, or edits a shell rc without asking, costs more than
 it saves.
 
-Introduced in commit `4df83d3`.
+Introduced in commit `9583c37`.
 
 ## Decision
 

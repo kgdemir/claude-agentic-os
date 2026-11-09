@@ -11,7 +11,7 @@ once idle past its cache TTL (ADR-0005), its next request re-pays its whole
 history. The rule in `agent-working-rules.md` §3 asks every brief for a `Goal:`,
 `Files:` and `Done:` line. A rule alone depends on the model remembering it.
 
-Introduced in commit `951dfca`.
+Introduced in commit `b46dbb3`.
 
 ## Decision
 

@@ -13,9 +13,9 @@ secrets, force pushes, edited migrations, swallowed errors, N+1 queries,
 un-type-checked builds. Waiting for each one to cost something first is the
 expensive way to learn it.
 
-Introduced in commits `97e60e9` (eight core rules, §9 Safety) and `4014093`
+Introduced in commits `5f151c7` (eight core rules, §9 Safety) and `d159262`
 (stack rules for .NET, EF Core, TypeScript, React, ESLint), corrected in
-`f00eafb`.
+`9cc0866`.
 
 ## Decision
 
@@ -57,5 +57,5 @@ Introduced in commits `97e60e9` (eight core rules, §9 Safety) and `4014093`
 
 ### Risks
 - A preventive rule can be wrong without an incident to test it against; two
-  claims were already corrected in `f00eafb`. Rules citing versions or APIs need
+  claims were already corrected in `9cc0866`. Rules citing versions or APIs need
   re-checking after major releases.

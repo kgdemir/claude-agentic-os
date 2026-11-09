@@ -21,7 +21,7 @@ environment variable (setting `autoCompactWindow`), and the
 `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` wins). `1h` is ignored while a Claude
 subscription is in overage.
 
-Introduced in commit `951dfca`.
+Introduced in commit `b46dbb3`.
 
 ## Decision
 
