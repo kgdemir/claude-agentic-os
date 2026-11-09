@@ -130,3 +130,12 @@ Three gaps named in the second amendment are closed in the hook:
   plugin skill typed by its short name (`/caveman`) is no longer counted; typed in
   full (`/caveman:caveman`), or loaded through a `Skill` call, it still is.
 - A typed `/name` that exists as a path at the filesystem root (`/tmp`) is not logged.
+
+## Amendment 2026-11-09 (typed short names)
+
+Typed short names count for plugins again: the report reads `typed/<name>` the same
+as a bare `Skill` call, so `/caveman` is credited to the one plugin item of that
+name. The owner chose this over a hand-kept list of built-in commands, which would
+go stale. Cost: a built-in command that shares a plugin item's short name
+(`/code-review`) is counted for that plugin. The `typed/` marker stays in the log,
+so typed uses can still be told apart from `Skill` calls.
