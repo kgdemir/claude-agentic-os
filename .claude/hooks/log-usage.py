@@ -35,10 +35,13 @@ PROJECTS_DIR = "projects"
 USAGE_DIR = "usage"
 GUIDES_DIR = "guides"
 DEFAULT_AGENT = "general-purpose"
-USER_SKILLS = "(user skills)"
-# "/name" alone or followed by text; "/home/x" (a path) is not a command
-SLASH = re.compile(r"^/([\w:.-]+)(?=\s|$)")
+USER_SKILLS = "(user skills and agents)"
+# "/name" alone, or followed by a space or punctuation; "/home/x" (a path) is not
+# a command. A one-segment path typed alone ("/tmp") still matches; the plugin
+# report counts only names that belong to a plugin, so it never adds to a count.
+SLASH = re.compile(r"^/([\w:.-]*\w)(?=[\s,.;:!?]|$)")
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.S)
+FRONTMATTER_BYTES = 8192  # frontmatter sits at the top; skill bodies can be large
 NAME_LINE = re.compile(r"^name:\s*['\"]?([^'\"\n]+?)['\"]?\s*$", re.M)
 NEVER = -1  # sorts before any logged time
 
@@ -92,18 +95,24 @@ def log_event(event):
         append(usage_log("agents"), str(tool_input.get("subagent_type") or DEFAULT_AGENT), session)
 
 
-def when(stamp):
-    """A logged time as int seconds; NEVER for a missing one."""
-    return int(stamp) if stamp else NEVER
+def parse_time(stamp):
+    """A logged time as unix seconds. Also reads the local ISO times of the
+    first release. Raises ValueError for an empty, unreadable or impossible one."""
+    moment = int(stamp) if stamp.isdigit() else int(datetime.fromisoformat(stamp).timestamp())
+    try:
+        datetime.fromtimestamp(moment)
+    except (OverflowError, OSError) as exc:
+        raise ValueError(f"time out of range: {stamp}") from exc
+    return moment
 
 
-def shown(stamp):
-    """A logged time in local time with its offset, for the reports."""
-    return datetime.fromtimestamp(int(stamp)).astimezone().isoformat(timespec="seconds") if stamp else "never"
+def shown(moment):
+    """A unix time in local time with its offset, for the reports."""
+    return "never" if moment == NEVER else datetime.fromtimestamp(moment).astimezone().isoformat(timespec="seconds")
 
 
 def read_log(log):
-    """Return (uses per name, last use per name, first stamp or None)."""
+    """Return (uses per name, last use per name, first use or None), in unix seconds."""
     uses, last, first, bad = Counter(), {}, None, 0
     try:
         with open(log, encoding="utf-8") as fh:
@@ -111,15 +120,13 @@ def read_log(log):
                 parts = line.rstrip("\n").split("\t")
                 try:
                     stamp, _, name = parts
-                    moment = when(stamp)
+                    moment = parse_time(stamp)
                 except ValueError:
                     bad += 1
                     continue
-                if first is None or moment < when(first):
-                    first = stamp
+                first = moment if first is None else min(first, moment)
                 uses[name] += 1
-                if moment > when(last.get(name)):
-                    last[name] = stamp
+                last[name] = max(last.get(name, NEVER), moment)
     except FileNotFoundError:
         print(f"no {log} yet; every entry below has 0 uses")
     if bad:
@@ -129,18 +136,18 @@ def read_log(log):
 
 def print_rows(names, log):
     uses, last, first = read_log(log)
-    if first:
+    if first is not None:
         print(f"logged since {shown(first)}")
     print(f"{'uses':>5}  {'last use':<25}  name")
-    for name in sorted(names, key=lambda n: (uses[n], when(last.get(n)), n)):
-        print(f"{uses[name]:>5}  {shown(last.get(name)):<25}  {name}")
+    for name in sorted(names, key=lambda n: (uses[n], last.get(n, NEVER), n)):
+        print(f"{uses[name]:>5}  {shown(last.get(name, NEVER)):<25}  {name}")
 
 
 def declared_name(path, fallback):
     """The frontmatter `name:` of a skill or agent file, else the fallback."""
     try:
         with open(path, encoding="utf-8") as fh:
-            text = fh.read()
+            text = fh.read(FRONTMATTER_BYTES).lstrip("\ufeff")
     except OSError as exc:
         print(f"!! cannot read {path} ({exc}); counted as {fallback}", file=sys.stderr)
         return fallback
@@ -178,10 +185,13 @@ def plugin_inventory():
                        for p in glob.glob(os.path.join(root, "commands", "*.md"))}
             agents |= {plugin + ":" + declared_name(p, os.path.basename(p)[:-3])
                        for p in glob.glob(os.path.join(root, "agents", "*.md"))}
-        if roots:
-            found[plugin] = (skills, agents)
+        if roots:  # one plugin from two marketplaces: one row, both lists
+            old_skills, old_agents = found.get(plugin, (set(), set()))
+            found[plugin] = (old_skills | skills, old_agents | agents)
     found[USER_SKILLS] = ({os.path.basename(os.path.dirname(p))
-                           for p in glob.glob(os.path.join(config, "skills", "*", "SKILL.md"))}, set())
+                           for p in glob.glob(os.path.join(config, "skills", "*", "SKILL.md"))},
+                          {declared_name(p, os.path.basename(p)[:-3])
+                           for p in glob.glob(os.path.join(config, "agents", "*.md"))})
     return found
 
 
@@ -197,31 +207,30 @@ def resolve_bare(uses, last, known, own):
         if len(matches) == 1:
             full = matches[0]
             uses[full] += uses.pop(bare)
-            if when(last.get(bare)) > when(last.get(full)):
-                last[full] = last[bare]
+            last[full] = max(last.get(full, NEVER), last.pop(bare, NEVER))
 
 
 def report_plugins():
     inventory = plugin_inventory()
-    own = inventory[USER_SKILLS][0]
+    own_skills, own_agents = inventory[USER_SKILLS]
     plugin_skills = {s for p, (sk, _) in inventory.items() if p != USER_SKILLS for s in sk}
-    plugin_agents = {a for p, (_, ag) in inventory.items() for a in ag}
+    plugin_agents = {a for p, (_, ag) in inventory.items() if p != USER_SKILLS for a in ag}
     skill_uses, skill_last, first = read_log(usage_log("skills"))
     agent_uses, agent_last, _ = read_log(usage_log("agents"))
-    resolve_bare(skill_uses, skill_last, plugin_skills, own)
-    resolve_bare(agent_uses, agent_last, plugin_agents, set())
-    if first:
+    resolve_bare(skill_uses, skill_last, plugin_skills, own_skills)
+    resolve_bare(agent_uses, agent_last, plugin_agents, own_agents)
+    if first is not None:
         print(f"logged since {shown(first)}")
     rows = []
     for plugin, (skills, agents) in inventory.items():
         uses = sum(skill_uses[s] for s in skills) + sum(agent_uses[a] for a in agents)
-        last = max([skill_last.get(s, "") for s in skills] + [agent_last.get(a, "") for a in agents],
-                   key=when, default="")
+        last = max([skill_last.get(s, NEVER) for s in skills] + [agent_last.get(a, NEVER) for a in agents],
+                   default=NEVER)
         used_s = sum(1 for s in skills if skill_uses[s])
         used_a = sum(1 for a in agents if agent_uses[a])
-        rows.append((uses, when(last), plugin, last, f"{used_s}/{len(skills)}", f"{used_a}/{len(agents)}"))
+        rows.append((uses, last, plugin, f"{used_s}/{len(skills)}", f"{used_a}/{len(agents)}"))
     print(f"{'uses':>5}  {'last use':<25}  {'skills':>8}  {'agents':>7}  plugin")
-    for uses, _, plugin, last, skills, agents in sorted(rows):
+    for uses, last, plugin, skills, agents in sorted(rows):
         print(f"{uses:>5}  {shown(last):<25}  {skills:>8}  {agents:>7}  {plugin}")
 
 

@@ -294,6 +294,40 @@ try:
             open(os.path.join(tz, f), "w").close()
         open(os.path.join(tz, ".access.log"), "w").write("1000\ts\tb.md\n999\ts\ta.md\n")
         order("unix time order", report("memory", tz), [("1", "a.md"), ("1", "b.md")])
+        # second review (ADR-0012): bad lines are skipped and counted, old ISO lines still read
+        bad = os.path.join(home, "bad")
+        os.makedirs(bad)
+        for f in ("a.md", "b.md", "c.md"):
+            open(os.path.join(bad, f), "w").close()
+        open(os.path.join(bad, ".access.log"), "w").write(
+            "\ts\tb.md\n99999999999999\ts\tb.md\nnot-a-time\ts\tb.md\nshort line\n"
+            "2026-11-09T10:00:00+03:00\ts\tc.md\n5\ts\ta.md\n")
+        rows = report("memory", bad, stderr_has="4 line(s)")
+        order("bad lines", rows, [("0", "b.md"), ("1", "a.md"), ("1", "c.md")])
+        if not any(r.startswith("logged since") for r in rows):
+            failures.append(f"bad lines: expected a 'logged since' line, got {rows!r}")
+        logged("command then punctuation", slash("/used, please"), "skills", "used")
+        # a user skill or agent of the same name wins over the one plugin item
+        os.makedirs(os.path.join(config, "skills", "mine"))
+        open(os.path.join(config, "skills", "mine", "SKILL.md"), "w").close()
+        os.makedirs(os.path.join(config, "agents"))
+        open(os.path.join(config, "agents", "aide.md"), "w").write("---\nname: aide\n---\n")
+        p4 = os.path.join(home, "p4")
+        for d in ("skills/mine", "agents"):
+            os.makedirs(os.path.join(p4, d))
+        open(os.path.join(p4, "skills", "mine", "SKILL.md"), "w").write("\ufeff---\nname: mine\n---\n")
+        open(os.path.join(p4, "agents", "aide.md"), "w").write("---\nname: aide\n---\n")
+        p4b = os.path.join(home, "p4b")
+        os.makedirs(os.path.join(p4b, "skills", "folder"))
+        # BOM before the frontmatter: the declared name still wins over the folder name
+        open(os.path.join(p4b, "skills", "folder", "SKILL.md"), "w").write("\ufeff---\nname: other\n---\n")
+        json.dump({"plugins": {"p4@m1": [{"installPath": p4}], "p4@m2": [{"installPath": p4b}]}}, open(plugins_json, "w"))
+        logged("typed user skill", slash("/mine"), "skills", "mine")
+        logged("user agent", tool("Agent", subagent_type="aide"), "agents", "aide")
+        logged("plugin skill from the second marketplace", tool("Skill", skill="p4:other"), "skills", "p4:other")
+        rows = {r.split()[-1]: r.split() for r in report("plugins") if r.split() and r.split()[0].isdigit()}
+        if rows.get("p4", [None])[0] != "1" or rows.get("p4", [""])[-3] != "1/2":
+            failures.append(f"user names win, marketplaces merge, BOM: expected p4 1 use, skills 1/2, got {rows.get('p4')}")
         # a symlinked guides folder still matches
         real_guides = os.path.join(home, "pack-guides")
         os.makedirs(os.path.join(real_guides, "tools"))
