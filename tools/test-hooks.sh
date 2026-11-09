@@ -176,6 +176,73 @@ expect("brief missing", A, agent("do the thing"), "`Goal:`")
 expect("brief complete", A, agent("Goal: x\nFiles: y\nDone: z"), None)
 expect("brief exempt", A, agent("find x", "Explore"), None)
 
+# usage log (PostToolUse + UserPromptSubmit): checks the log lines it writes, and that it stays silent
+U = "log-usage.py"
+with tempfile.TemporaryDirectory() as home:
+    config = os.path.join(home, ".claude")
+    os.environ["CLAUDE_CONFIG_DIR"] = config
+    mem = os.path.join(config, "projects", "-p", "memory")
+    guides = os.path.join(config, "guides", "stacks")
+    other = os.path.join(home, "notes")
+    for d in (mem, guides, other):
+        os.makedirs(d)
+    logs = {"memory": os.path.join(mem, ".access.log"),
+            **{k: os.path.join(config, "usage", k + ".log") for k in ("guides", "skills", "agents")}}
+    snapshot = lambda: {k: open(v).read() if os.path.exists(v) else "" for k, v in logs.items()}
+    tool = lambda name, **inp: {"tool_name": name, "tool_input": inp, "session_id": "s1"}
+    def logged(name, event, where=None, entry=None):
+        before = snapshot()
+        expect(name + " (silent)", U, event, None)
+        after = snapshot()
+        new = {k: after[k][len(before[k]):] for k in logs if after[k] != before[k]}
+        want = {where: f"\ts1\t{entry}\n"} if where else {}
+        if set(new) != set(want) or any(not new[k].endswith(want[k]) or new[k].count("\n") != 1 for k in want):
+            failures.append(f"{name}: expected {want or 'no log line'}, got {new!r}")
+    logged("memory topic read", tool("Read", file_path=os.path.join(mem, "fact.md")), "memory", "fact.md")
+    logged("memory index read", tool("Read", file_path=os.path.join(mem, "MEMORY.md")))
+    logged("guide read", tool("Read", file_path=os.path.join(guides, "dotnet.md")), "guides", "stacks/dotnet.md")
+    logged("md elsewhere", tool("Read", file_path=os.path.join(other, "fact.md")))
+    logged("non-md in memory", tool("Read", file_path=os.path.join(mem, "fact.txt")))
+    logged("skill call", tool("Skill", skill="p1:used"), "skills", "p1:used")
+    logged("skill call, bad input", tool("Skill", skill=3))
+    logged("agent call", tool("Agent", subagent_type="p1:helper"), "agents", "p1:helper")
+    logged("agent, default type", tool("Agent", prompt="x"), "agents", "general-purpose")
+    logged("slash prompt", {"hook_event_name": "UserPromptSubmit", "prompt": "/p1:typed now", "session_id": "s1"},
+           "skills", "p1:typed")
+    logged("plain prompt", {"hook_event_name": "UserPromptSubmit", "prompt": "fix a/b", "session_id": "s1"})
+    logged("other tool", tool("Edit", file_path=os.path.join(mem, "fact.md")))
+    logged("bad input", {"tool_name": "Read", "tool_input": "x"})
+
+    def report(*args):
+        return subprocess.run([sys.executable, "-I", os.path.join(HOOKS, U), "--report", *args],
+                              capture_output=True, text=True, check=True).stdout.splitlines()
+    def order(name, lines, want):
+        got = [(r.split()[0], r.split()[-1]) for r in lines if r.split() and r.split()[0].isdigit()]
+        if got != want:
+            failures.append(f"report {name}: expected {want}, got {lines!r}")
+    for f in ("fact.md", "unread.md"):
+        open(os.path.join(mem, f), "w").close()
+    order("memory", report("memory", mem), [("0", "unread.md"), ("1", "fact.md")])
+    open(os.path.join(guides, "dotnet.md"), "w").close()
+    open(os.path.join(guides, "python.md"), "w").close()
+    order("guides", report("guides"), [("0", "stacks/python.md"), ("1", "stacks/dotnet.md")])
+    plugin = os.path.join(home, "p1")
+    for d in ("skills/used", "skills/idle", "agents"):
+        os.makedirs(os.path.join(plugin, d))
+    open(os.path.join(plugin, "skills", "used", "SKILL.md"), "w").write("---\nname: used\n---\n")
+    open(os.path.join(plugin, "skills", "idle", "SKILL.md"), "w").write("---\nname: idle\n---\n")
+    open(os.path.join(plugin, "agents", "helper.md"), "w").write("---\nname: helper\n---\n")
+    os.makedirs(os.path.join(home, "p2", "skills", "never"))
+    open(os.path.join(home, "p2", "skills", "never", "SKILL.md"), "w").close()
+    os.makedirs(os.path.join(config, "plugins"))
+    json.dump({"plugins": {"p1@m": [{"installPath": plugin}], "p2@m": [{"installPath": os.path.join(home, "p2")}]}},
+              open(os.path.join(config, "plugins", "installed_plugins.json"), "w"))
+    rows = [r.split() for r in report("plugins") if r.split() and r.split()[0].isdigit()]
+    got = [(r[0], r[-3], r[-2], r[-1]) for r in rows if r[-1] in ("p1", "p2")]
+    if got != [("0", "0/1", "0/0", "p2"), ("2", "1/2", "1/1", "p1")]:
+        failures.append(f"report plugins: expected p2 unused before p1 (2 uses), got {rows!r}")
+    del os.environ["CLAUDE_CONFIG_DIR"]
+
 if failures:
     print("\n".join(failures))
     sys.exit(1)

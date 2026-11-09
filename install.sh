@@ -962,7 +962,7 @@ fi
 
 # --------------------------------------------------------------------- hooks
 
-# Warn-only PreToolUse hooks; none ever blocks a call.
+# Hooks; none ever blocks a call.
 #   check-agent-brief.py   an Agent brief without Goal:/Files:/Done: lines, so
 #                          subagents do not stall on questions while their
 #                          cache expires (ADR-0006)
@@ -970,13 +970,19 @@ fi
 #                          force push, reset --hard, AI attribution, a piped
 #                          gate without pipefail, secrets in the staged diff
 #                          (ADR-0009)
+#   log-usage.py           PostToolUse on Read|Skill|Agent|Task and
+#                          UserPromptSubmit: appends memory, guide, skill and
+#                          agent use to append-only logs, to find what is
+#                          rarely used and worth grouping or turning off
+#                          (ADR-0012)
 # Each registered command is recorded next to its script, so a re-run (even
 # from another path) replaces exactly the entry it wrote before and never
 # touches a hook of yours that happens to share a name.
-install_hook() { # install_hook <script name> <matcher> <label>
+install_hook() { # install_hook <script name> <matcher> <label> [event, default PreToolUse]
   local name="$1"
   local matcher="$2"
   local label="$3"
+  local event="${4:-PreToolUse}"
   local HOOK_PATH="$DEST/hooks/$name"
   if [ -e "$HOOK_PATH" ] && ! cmp -s "$SRC_DIR/.claude/hooks/$name" "$HOOK_PATH"; then
     cp -p "$HOOK_PATH" "$HOOK_PATH.backup-$STAMP"
@@ -987,7 +993,7 @@ install_hook() { # install_hook <script name> <matcher> <label>
   echo "    installed  $HOOK_PATH"
 
   HOOK_PATH="$HOOK_PATH" HOOK_STATE="$DEST/hooks/${name%.py}.registered" \
-    HOOK_MATCHER="$matcher" HOOK_LABEL="$label" \
+    HOOK_MATCHER="$matcher" HOOK_LABEL="$label" HOOK_EVENT="$event" \
     python3 - "$SETTINGS" <<'PY'
 import json, os, shlex, sys
 
@@ -1005,6 +1011,7 @@ ours = {command, previous} - {""}
 # (a regex like "^(Agent|Task)$" would skip that path and its tool aliases).
 matcher = os.environ["HOOK_MATCHER"]
 label = os.environ["HOOK_LABEL"]
+event = os.environ["HOOK_EVENT"]
 try:
     with open(path) as fh:
         data = json.load(fh)
@@ -1017,9 +1024,9 @@ except Exception as exc:                          # malformed file: leave it alo
     raise SystemExit(0)
 
 hooks = data.setdefault("hooks", {})
-pre = hooks.setdefault("PreToolUse", []) if isinstance(hooks, dict) else None
+pre = hooks.setdefault(event, []) if isinstance(hooks, dict) else None
 if not isinstance(pre, list):
-    print(f"!! {path}: hooks.PreToolUse is not a list; register {command} by hand",
+    print(f"!! {path}: hooks.{event} is not a list; register {command} by hand",
           file=sys.stderr)
     raise SystemExit(0)
 
@@ -1041,7 +1048,7 @@ else:
                 continue
         kept.append(entry)
     kept.append(wanted)
-    hooks["PreToolUse"] = kept
+    hooks[event] = kept
     with open(path, "w") as fh:
         json.dump(data, fh, indent=2)
         fh.write("\n")
@@ -1056,8 +1063,10 @@ if command -v python3 >/dev/null 2>&1; then
   SETTINGS="$DEST/settings.json"
   install_hook check-agent-brief.py 'Agent|Task' 'brief hook'
   install_hook check-bash-command.py 'Bash' 'bash command hook'
+  install_hook log-usage.py 'Read|Skill|Agent|Task' 'usage log' PostToolUse
+  install_hook log-usage.py '' 'usage log (slash commands)' UserPromptSubmit
 else
-  echo "!! python3 not found; skipping the warn-only hooks" >&2
+  echo "!! python3 not found; skipping the hooks" >&2
 fi
 
 # settings.json is backed up before the merges above, which may change nothing;
