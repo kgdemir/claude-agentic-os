@@ -99,3 +99,18 @@ After a review of `2deb277` (fixed in `312a3bd`):
   from the frontmatter only; every install path of a plugin is scanned; and an
   unreadable file or a bad `installed_plugins.json` is reported on stderr
   instead of being skipped silently or crashing the report.
+
+## Amendment 2026-11-09 (second review)
+
+After a review of `312a3bd`:
+- An empty, unreadable or out-of-range time makes its line a bad line: skipped
+  and counted on stderr, never a use and never a report crash. Lines with the
+  local ISO time of the first release are still read.
+- A user skill in `~/.claude/skills/` or a user agent in `~/.claude/agents/`
+  wins over a plugin item of the same bare name; one plugin from two
+  marketplaces is one row with both lists.
+- A typed `/name` may be followed by punctuation. A one-segment path typed
+  alone (`/tmp`) still matches, but never counts for a plugin.
+- Only the first 8KB of a skill or agent file is read for its name, after a
+  leading BOM. Built-in commands and project skills are still unknown to the
+  report, so a bare name that matches one plugin item is credited to it.
