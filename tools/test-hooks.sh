@@ -258,8 +258,10 @@ try:
             failures.append("memory-shaped folder outside config: wrote a .access.log into the repo")
         slash = lambda text: {"hook_event_name": "UserPromptSubmit", "prompt": text, "session_id": "s1"}
         logged("prompt starting with a path", slash("/home/x/app.py is broken"))
-        logged("bare slash command alone", slash("/used"), "skills", "used")
-        logged("ambiguous bare command", slash("/dup"), "skills", "dup")
+        logged("bare skill call", tool("Skill", skill="used"), "skills", "used")
+        logged("typed bare command", slash("/used"), "skills", "typed/used")
+        logged("ambiguous bare skill call", tool("Skill", skill="dup"), "skills", "dup")
+        logged("root path typed alone", slash("/tmp"))
         for plug in ("p1", "p3"):
             os.makedirs(os.path.join(home, plug, "commands"), exist_ok=True)
             open(os.path.join(home, plug, "commands", "dup.md"), "w").close()
@@ -274,7 +276,7 @@ try:
         logged("agent of a second install", tool("Agent", subagent_type="p3:real"), "agents", "p3:real")
         rows = {r.split()[-1]: r.split() for r in report("plugins") if r.split() and r.split()[0].isdigit()}
         if rows.get("p1", [None])[0] != "3":
-            failures.append(f"bare /used: expected p1 at 3 uses (used, helper, /used), got {rows.get('p1')}")
+            failures.append(f"bare skill call: expected p1 at 3 uses (p1:used, helper, used; typed /used not), got {rows.get('p1')}")
         if rows.get("p3", [None])[0] != "1" or rows.get("p3", [""])[-2] != "1/1":
             failures.append(f"second install / frontmatter name: expected p3 1 use, agents 1/1, got {rows.get('p3')}")
         open(plugins_json, "w").write("{not json")
@@ -306,7 +308,7 @@ try:
         order("bad lines", rows, [("0", "b.md"), ("1", "a.md"), ("1", "c.md")])
         if not any(r.startswith("logged since") for r in rows):
             failures.append(f"bad lines: expected a 'logged since' line, got {rows!r}")
-        logged("command then punctuation", slash("/used, please"), "skills", "used")
+        logged("command then punctuation", slash("/used, please"), "skills", "typed/used")
         # a user skill or agent of the same name wins over the one plugin item
         os.makedirs(os.path.join(config, "skills", "mine"))
         open(os.path.join(config, "skills", "mine", "SKILL.md"), "w").close()
@@ -322,12 +324,34 @@ try:
         # BOM before the frontmatter: the declared name still wins over the folder name
         open(os.path.join(p4b, "skills", "folder", "SKILL.md"), "w").write("\ufeff---\nname: other\n---\n")
         json.dump({"plugins": {"p4@m1": [{"installPath": p4}], "p4@m2": [{"installPath": p4b}]}}, open(plugins_json, "w"))
-        logged("typed user skill", slash("/mine"), "skills", "mine")
+        logged("typed user skill", slash("/mine"), "skills", "typed/mine")
         logged("user agent", tool("Agent", subagent_type="aide"), "agents", "aide")
         logged("plugin skill from the second marketplace", tool("Skill", skill="p4:other"), "skills", "p4:other")
         rows = {r.split()[-1]: r.split() for r in report("plugins") if r.split() and r.split()[0].isdigit()}
         if rows.get("p4", [None])[0] != "1" or rows.get("p4", [""])[-3] != "1/2":
             failures.append(f"user names win, marketplaces merge, BOM: expected p4 1 use, skills 1/2, got {rows.get('p4')}")
+        lines = report("plugins")
+        user_row = [r.split() for r in lines if r.endswith("(user skills and agents)")]
+        if not user_row or user_row[0][0] != "2":
+            failures.append(f"typed user skill: expected the user row at 2 uses (typed /mine, aide), got {lines!r}")
+        # project items: found from the session's cwd or a folder above it; the user's config is not a project
+        repo2 = os.path.join(home, "repo2")
+        os.makedirs(os.path.join(repo2, ".claude", "skills", "proj"))
+        open(os.path.join(repo2, ".claude", "skills", "proj", "SKILL.md"), "w").close()
+        os.makedirs(os.path.join(repo2, ".claude", "agents"))
+        open(os.path.join(repo2, ".claude", "agents", "pa.md"), "w").close()
+        os.makedirs(os.path.join(repo2, "sub"))
+        at = lambda event, cwd: {**event, "cwd": cwd}
+        sub_dir = os.path.join(repo2, "sub")
+        logged("typed project skill", at(slash("/proj"), sub_dir), "skills", "project/proj")
+        logged("project skill call", at(tool("Skill", skill="proj"), sub_dir), "skills", "project/proj")
+        logged("project agent", at(tool("Agent", subagent_type="pa"), sub_dir), "agents", "project/pa")
+        logged("skill call outside the project", at(tool("Skill", skill="proj"), other), "skills", "proj")
+        logged("user skill from home is not a project skill", at(tool("Skill", skill="mine"), home), "skills", "mine")
+        lines = report("plugins")
+        project_row = [r.split() for r in lines if r.endswith("(project skills and agents)")]
+        if not project_row or project_row[0][0] != "3" or project_row[0][2:4] != ["1/-", "1/-"]:
+            failures.append(f"project row: expected 3 uses, skills 1/-, agents 1/-, got {lines!r}")
         # a symlinked guides folder still matches
         real_guides = os.path.join(home, "pack-guides")
         os.makedirs(os.path.join(real_guides, "tools"))

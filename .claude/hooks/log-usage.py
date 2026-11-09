@@ -10,6 +10,11 @@ Each use appends one line, `unix time<TAB>session id<TAB>name`, to a log
   Skill call, or a prompt starting "/x"   -> <config>/usage/skills.log
   Agent/Task call (its subagent_type)     -> <config>/usage/agents.log
 
+A bare name found in a .claude/skills, .claude/commands or .claude/agents
+folder of the session's cwd or a folder above it is logged as project/<name>.
+A bare name typed as "/x" is logged as typed/x: a typed name may be a built-in
+command, so the report credits it to a user skill but never to a plugin. A
+typed "/x" that is a path at the filesystem root ("/tmp") is not logged.
 <config> is $CLAUDE_CONFIG_DIR, else the folder above this script's hooks/.
 MEMORY.md is never logged: it loads at session start, not through Read.
 Lines are only appended, so sessions running at once never lose a count. The
@@ -36,9 +41,12 @@ USAGE_DIR = "usage"
 GUIDES_DIR = "guides"
 DEFAULT_AGENT = "general-purpose"
 USER_SKILLS = "(user skills and agents)"
+PROJECT_ITEMS = "(project skills and agents)"
+PROJECT = "project/"  # a name found in the session's .claude folders
+TYPED = "typed/"  # a bare name the person typed; may be a built-in command
+NO_TOTAL = "-"  # project items differ per project, so there is no total
 # "/name" alone, or followed by a space or punctuation; "/home/x" (a path) is not
-# a command. A one-segment path typed alone ("/tmp") still matches; the plugin
-# report counts only names that belong to a plugin, so it never adds to a count.
+# a command. A one-segment path typed alone ("/tmp") matches; log_event skips it.
 SLASH = re.compile(r"^/([\w:.-]*\w)(?=[\s,.;:!?]|$)")
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.S)
 FRONTMATTER_BYTES = 8192  # frontmatter sits at the top; skill bodies can be large
@@ -78,21 +86,47 @@ def log_read(path, session):
         append(usage_log("guides"), path[len(guides):], session)
 
 
+def project_item(name, cwd, kind):
+    """True when a bare name is a skill, command or agent of the session's project:
+    in <folder>/.claude/ of cwd or a folder above it, the user's own config left out."""
+    if not name or ":" in name or os.sep in name or not cwd:
+        return False
+    files = [os.path.join("agents", name + ".md")] if kind == "agents" else \
+        [os.path.join("skills", name, "SKILL.md"), os.path.join("commands", name + ".md")]
+    folder, config = os.path.realpath(cwd), config_dir()
+    while True:
+        claude = os.path.join(folder, ".claude")
+        if os.path.realpath(claude) != config and any(os.path.isfile(os.path.join(claude, f)) for f in files):
+            return True
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return False
+        folder = parent
+
+
 def log_event(event):
     tool_input = event.get("tool_input")
     tool_input = tool_input if isinstance(tool_input, dict) else {}
     tool = event.get("tool_name")
     session = str(event.get("session_id", "-")).replace("\t", " ")
+    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else ""
     if event.get("hook_event_name") == "UserPromptSubmit":
         match = SLASH.match(str(event.get("prompt", "")).lstrip())
-        if match:
-            append(usage_log("skills"), match.group(1), session)
+        name = match.group(1) if match else ""
+        if project_item(name, cwd, "skills"):
+            append(usage_log("skills"), PROJECT + name, session)
+        elif ":" in name:
+            append(usage_log("skills"), name, session)
+        elif name and not os.path.exists(os.path.join(os.sep, name)):
+            append(usage_log("skills"), TYPED + name, session)
     elif tool == "Read" and isinstance(tool_input.get("file_path"), str):
         log_read(tool_input["file_path"], session)
     elif tool == "Skill" and isinstance(tool_input.get("skill"), str):
-        append(usage_log("skills"), tool_input["skill"], session)
+        name = tool_input["skill"]
+        append(usage_log("skills"), (PROJECT if project_item(name, cwd, "skills") else "") + name, session)
     elif tool in ("Agent", "Task"):
-        append(usage_log("agents"), str(tool_input.get("subagent_type") or DEFAULT_AGENT), session)
+        name = str(tool_input.get("subagent_type") or DEFAULT_AGENT)
+        append(usage_log("agents"), (PROJECT if project_item(name, cwd, "agents") else "") + name, session)
 
 
 def parse_time(stamp):
@@ -196,13 +230,17 @@ def plugin_inventory():
 
 
 def resolve_bare(uses, last, known, own):
-    """Credit a bare name ("caveman", typed as /caveman) to the one plugin item
-    whose short name it is. A user skill of that name wins; an ambiguous name
-    stays bare and is credited to nobody."""
+    """Credit a bare name ("caveman") to the one plugin item whose short name it
+    is. A user skill of that name wins; an ambiguous name stays bare and is
+    credited to nobody. A typed name counts for a user skill of that name only."""
+    for typed in [n for n in uses if n.startswith(TYPED) and n[len(TYPED):] in own]:
+        bare = typed[len(TYPED):]
+        uses[bare] += uses.pop(typed)
+        last[bare] = max(last.get(bare, NEVER), last.pop(typed, NEVER))
     by_short = {}
     for name in known:
         by_short.setdefault(name.split(":", 1)[-1], []).append(name)
-    for bare in [n for n in uses if ":" not in n and n not in own]:
+    for bare in [n for n in uses if ":" not in n and "/" not in n and n not in own]:
         matches = by_short.get(bare, [])
         if len(matches) == 1:
             full = matches[0]
@@ -229,6 +267,12 @@ def report_plugins():
         used_s = sum(1 for s in skills if skill_uses[s])
         used_a = sum(1 for a in agents if agent_uses[a])
         rows.append((uses, last, plugin, f"{used_s}/{len(skills)}", f"{used_a}/{len(agents)}"))
+    project_skills = [s for s in skill_uses if s.startswith(PROJECT)]
+    project_agents = [a for a in agent_uses if a.startswith(PROJECT)]
+    if project_skills or project_agents:
+        rows.append((sum(skill_uses[s] for s in project_skills) + sum(agent_uses[a] for a in project_agents),
+                     max([skill_last[s] for s in project_skills] + [agent_last[a] for a in project_agents]),
+                     PROJECT_ITEMS, f"{len(project_skills)}/{NO_TOTAL}", f"{len(project_agents)}/{NO_TOTAL}"))
     print(f"{'uses':>5}  {'last use':<25}  {'skills':>8}  {'agents':>7}  plugin")
     for uses, last, plugin, skills, agents in sorted(rows):
         print(f"{uses:>5}  {shown(last):<25}  {skills:>8}  {agents:>7}  {plugin}")
