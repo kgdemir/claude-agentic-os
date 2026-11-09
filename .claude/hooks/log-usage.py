@@ -12,9 +12,10 @@ Each use appends one line, `unix time<TAB>session id<TAB>name`, to a log
 
 A bare name found in a .claude/skills, .claude/commands or .claude/agents
 folder of the session's cwd or a folder above it is logged as project/<name>.
-A bare name typed as "/x" is logged as typed/x: a typed name may be a built-in
-command, so the report credits it to a user skill but never to a plugin. A
-typed "/x" that is a path at the filesystem root ("/tmp") is not logged.
+A bare name typed as "/x" is logged as typed/x; the report counts it like a
+bare Skill call, so a built-in command that shares a plugin item's short name
+is counted for that plugin. A typed "/x" that is a path at the filesystem root
+("/tmp") is not logged.
 <config> is $CLAUDE_CONFIG_DIR, else the folder above this script's hooks/.
 MEMORY.md is never logged: it loads at session start, not through Read.
 Lines are only appended, so sessions running at once never lose a count. The
@@ -43,7 +44,7 @@ DEFAULT_AGENT = "general-purpose"
 USER_SKILLS = "(user skills and agents)"
 PROJECT_ITEMS = "(project skills and agents)"
 PROJECT = "project/"  # a name found in the session's .claude folders
-TYPED = "typed/"  # a bare name the person typed; may be a built-in command
+TYPED = "typed/"  # a bare name the person typed, kept apart from Skill calls
 NO_TOTAL = "-"  # project items differ per project, so there is no total
 # "/name" alone, or followed by a space or punctuation; "/home/x" (a path) is not
 # a command. A one-segment path typed alone ("/tmp") matches; log_event skips it.
@@ -232,8 +233,8 @@ def plugin_inventory():
 def resolve_bare(uses, last, known, own):
     """Credit a bare name ("caveman") to the one plugin item whose short name it
     is. A user skill of that name wins; an ambiguous name stays bare and is
-    credited to nobody. A typed name counts for a user skill of that name only."""
-    for typed in [n for n in uses if n.startswith(TYPED) and n[len(TYPED):] in own]:
+    credited to nobody. A typed name counts the same as a bare Skill call."""
+    for typed in [n for n in uses if n.startswith(TYPED)]:
         bare = typed[len(TYPED):]
         uses[bare] += uses.pop(typed)
         last[bare] = max(last.get(bare, NEVER), last.pop(typed, NEVER))

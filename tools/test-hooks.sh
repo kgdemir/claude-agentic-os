@@ -275,8 +275,8 @@ try:
                   open(plugins_json, "w"))
         logged("agent of a second install", tool("Agent", subagent_type="p3:real"), "agents", "p3:real")
         rows = {r.split()[-1]: r.split() for r in report("plugins") if r.split() and r.split()[0].isdigit()}
-        if rows.get("p1", [None])[0] != "3":
-            failures.append(f"bare skill call: expected p1 at 3 uses (p1:used, helper, used; typed /used not), got {rows.get('p1')}")
+        if rows.get("p1", [None])[0] != "4":
+            failures.append(f"bare skill call: expected p1 at 4 uses (p1:used, helper, used, typed /used), got {rows.get('p1')}")
         if rows.get("p3", [None])[0] != "1" or rows.get("p3", [""])[-2] != "1/1":
             failures.append(f"second install / frontmatter name: expected p3 1 use, agents 1/1, got {rows.get('p3')}")
         open(plugins_json, "w").write("{not json")
