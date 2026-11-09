@@ -16,7 +16,7 @@ The rules in `agent-working-rules.md` §8 (group rarely read memories) and
 `tools/skills.md` (prune plugins and guides) need to know what is rarely used.
 Without data, that is a guess.
 
-Introduced in commit TODO: fill in the SHA once committed.
+Introduced in commit `2deb277`.
 
 ## Decision
 
