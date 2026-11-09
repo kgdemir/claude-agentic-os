@@ -83,3 +83,19 @@ Introduced in commit `2deb277`.
   plugin report counts only names that belong to a plugin.
 - Hook event names and input fields are version-specific; re-verify after a
   major Claude Code update.
+
+## Amendment 2026-11-09
+
+After a review of `2deb277` (fixed in `312a3bd`):
+- Log lines start with Unix time (whole seconds, UTC) instead of a local ISO
+  time, so times compare as numbers across time zones; the reports show them
+  in local time.
+- Memory reads are logged only under `<config>/projects/`, so a repository
+  with a `projects/*/memory/` folder of its own gets no `.access.log`.
+- A typed `/name` must end at a space or the end of the prompt, so a prompt
+  that starts with a path is not logged. A bare name is credited to the one
+  plugin item with that short name; an ambiguous one to none.
+- The guides folder is resolved through symlinks; skill and agent names come
+  from the frontmatter only; every install path of a plugin is scanned; and an
+  unreadable file or a bad `installed_plugins.json` is reported on stderr
+  instead of being skipped silently or crashing the report.

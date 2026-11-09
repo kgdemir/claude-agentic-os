@@ -12,14 +12,16 @@ per-person placeholders and installs them into `~/.claude`.
   on demand (ADR-0007). One topic per file; a tool or feature never hides inside
   a stack or core guide. `.claude/templates/*.md`,
   `.claude/hooks/check-agent-brief.py` (ADR-0006),
-  `.claude/hooks/check-bash-command.py` (ADR-0009), `.claude/bin/runclaude`,
+  `.claude/hooks/check-bash-command.py` (ADR-0009),
+  `.claude/hooks/log-usage.py` (ADR-0012), `.claude/bin/runclaude`,
   `.claude/statusline-{linux,macos}.sh`.
 - `install.sh` — Bash; detection, substitution, plugins, statusline, settings merge,
   hook registration, auth. Inline Python for JSON edits.
 
 ## Commands
 - `tools/check.sh` — every gate below plus a trial install; CI runs it too.
-- `tools/test-hooks.sh` — sample events through both hooks (ADR-0009).
+- `tools/test-hooks.sh` — sample events through all three hooks, plus the
+  usage reports (ADR-0009, ADR-0012).
 - `tools/check-guides.sh` — guide structure: reason lines (baseline
   `tools/check-guides.baseline`), paths, trigger rows, YAML, leak names from the
   gitignored `tools/leak-names.local`.
@@ -37,7 +39,7 @@ per-person placeholders and installs them into `~/.claude`.
 ## Quality gates (must pass before commit)
 - `tools/check.sh` passes; with `tools/leak-names.local` present locally, so the
   leak check runs (CI skips it).
-- Every warn case added to a hook gets a no-warn twin in `tools/test-hooks.sh`.
+- Every warn or log case added to a hook gets a silent twin in `tools/test-hooks.sh`.
 - Installer changes stay idempotent and never overwrite the person's settings (ADR-0002).
 - A new placeholder needs a matching `sed` expression in `install_file()` (ADR-0001).
 - No magic numbers/strings — values shared with docs live once in `install.sh`.
