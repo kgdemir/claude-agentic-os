@@ -72,7 +72,7 @@ holding them.
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
 | **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
-| **Hooks** (warn-only) | remind Claude, never block: subagent briefs without `Goal:`/`Files:`/`Done:`, and shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff) |
+| **Hooks** (never block) | remind Claude: subagent briefs without `Goal:`/`Files:`/`Done:`, and shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff); log memory, guide, skill and agent use, to find what is worth grouping or turning off (ADR-0012) |
 | **Launcher** (optional) | `runclaude <project>` — installs missing tooling, prepares the venv, fast-forwards a clean default branch, opens Claude |
 
 ## Install
@@ -207,6 +207,11 @@ only when `settings.json` does not already carry them:
                                  when a command breaks a core rule; on
                                  git commit it scans the staged diff and names
                                  only the file and kind of a likely secret
+  log-usage.py                   PostToolUse hook on Read|Skill|Agent|Task and
+                                 UserPromptSubmit hook: appends memory, guide,
+                                 skill and agent use to append-only logs
+                                 (memory/.access.log, ~/.claude/usage/*.log);
+                                 --report memory|guides|plugins totals them
 ~/.claude/skills/security-audit/ the security-audit skill (only with --with-security-audit)
 ~/.claude/skill-backups/         earlier copies of that skill, as .tar.backup-<timestamp>
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)
@@ -403,7 +408,7 @@ report a problem.
 | Command | What it does |
 | --- | --- |
 | `tools/check.sh` | every gate before a commit; CI (`.github/workflows/ci.yml`) runs the same script |
-| `tools/test-hooks.sh` | feeds sample events to both hooks; each warn case has a no-warn twin |
+| `tools/test-hooks.sh` | feeds sample events to the hooks; each warn or log case has a silent twin, and the usage reports are checked |
 | `tools/check-guides.sh` | each add-on rule has a `*Cost:*`/`*Why:*` line, pack paths resolve, each add-on has a trigger row, YAML blocks parse, no project name from the local `tools/leak-names.local` appears |
 | `tools/check-values.sh` | settings values quoted in the docs match `install.sh` |
 | `tools/sync-live.sh [--dry-run]` | copies changed rules, templates and hooks into your live `~/.claude` with backups, using your install answers from the gitignored `tools/sync-live.local`; never edits `settings.json` and reports hooks still to register with `./install.sh` |
