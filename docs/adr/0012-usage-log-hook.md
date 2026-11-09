@@ -114,3 +114,19 @@ After a review of `312a3bd`:
 - Only the first 8KB of a skill or agent file is read for its name, after a
   leading BOM. Built-in commands and project skills are still unknown to the
   report, so a bare name that matches one plugin item is credited to it.
+
+## Amendment 2026-11-09 (known gaps)
+
+Three gaps named in the second amendment are closed in the hook:
+
+- A bare name found as `.claude/skills/<name>/SKILL.md`, `.claude/commands/<name>.md`
+  or `.claude/agents/<name>.md` under the session's `cwd` or a folder above it is
+  logged as `project/<name>`. The user's own config folder is not a project. The
+  plugin report sums these in one `(project skills and agents)` row; its totals show
+  `-`, because project items differ per project.
+- A bare name typed as `/name` is logged as `typed/<name>`. A typed name may be a
+  built-in command, and no reliable list of those exists, so the report credits a
+  typed name to a user skill of that name, but never to a plugin item. Cost: a
+  plugin skill typed by its short name (`/caveman`) is no longer counted; typed in
+  full (`/caveman:caveman`), or loaded through a `Skill` call, it still is.
+- A typed `/name` that exists as a path at the filesystem root (`/tmp`) is not logged.
