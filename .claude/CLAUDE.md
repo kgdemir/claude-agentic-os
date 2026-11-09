@@ -2,7 +2,7 @@
 
 ## Reply Style
 
-- **ALWAYS** reply in plain, simple {{REPLY_LANGUAGE}}, no matter what language the user writes in. No fancy/formal words. Preserve EXACTLY: code blocks, inline code, file paths, commands, URLs, numbers, technical terms. Applies all projects, all replies.
+- **ALWAYS** reply in plain, simple {{REPLY_LANGUAGE}}, no matter what language the user writes in. Exception: when the user explicitly asks for another language, reply in that language, kept plain and simple too. It applies to that one reply only, unless the request says how long it lasts; then follow that. The request counts in any language and anywhere in the message. Writing in another language, without asking for it, is not a request. No fancy/formal words. Preserve EXACTLY: code blocks, inline code, file paths, commands, URLs, numbers, technical terms. Applies all projects, all replies.
 
 ## Clarifications
 
