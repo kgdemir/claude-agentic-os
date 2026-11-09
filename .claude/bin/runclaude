@@ -140,8 +140,13 @@ for BREW_CANDIDATE in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     break
   fi
 done
-# uv / claude native installers drop binaries here.
-export PATH="$HOME/.local/bin:$PATH"
+# uv / claude native installers drop binaries here. Added once: the login
+# shell usually has it already, and a repeat only makes PATH longer. Step 9
+# moves it to the front for claude.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
 
 OS="$(uname -s)"
 
@@ -454,8 +459,59 @@ fi
 # -----------------------------
 # 9. Ensure Claude Code CLI
 # -----------------------------
-# The native installer puts claude in ~/.local/bin (on PATH above) and
-# auto-updates it.
+# The native installer puts claude in ~/.local/bin and auto-updates it.
+# ~/.local/bin is moved to the front of PATH here, after nvm (step 7) and
+# Homebrew put their bin folders ahead of it, so a claude in one of those never
+# starts instead of the native one.
+NATIVE_DIR="$HOME/.local/bin"
+NATIVE_CLAUDE="$NATIVE_DIR/claude"
+PATH="$NATIVE_DIR:$(printf '%s' "$PATH" | awk -v RS=: -v skip="$NATIVE_DIR" \
+  '$0 != skip { printf "%s%s", sep, $0; sep=":" }')"
+export PATH
+
+# An npm global copy beside the native one is removed: the two fight over
+# updates, and the npm copy can be left with a stub binary ("native binary for
+# this platform was not downloaded"). Checked only when another claude is on
+# PATH, so a normal launch never starts npm. The npm checked is the first one
+# on PATH (nvm, Homebrew or the system's). The copy stays while a session runs
+# from it, because removing it deletes files that session still loads, and
+# when its folder is not writable, which needs sudo.
+CLAUDE_NPM_PACKAGE="@anthropic-ai/claude-code"
+
+# True when a running process was started from a file under the given folder.
+running_from() {
+  # the folder goes in through the environment, not as an argument, so this
+  # pipeline's own process never matches itself
+  ps -axo comm=,args= 2>/dev/null \
+    | RUNNING_DIR="$1/" awk 'index($0, ENVIRON["RUNNING_DIR"]) { found = 1 } END { exit !found }' \
+    && return 0
+  [ -d /proc ] || return 1
+  local exe
+  for exe in /proc/[0-9]*/exe; do
+    # readlink fails for processes of other users; those are not ours to check
+    case "$(readlink "$exe" 2>/dev/null)" in "$1"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+if [ -x "$NATIVE_CLAUDE" ] && type -ap claude | grep -qvxF "$NATIVE_CLAUDE" \
+   && command -v npm >/dev/null 2>&1; then
+  NPM_ROOT="$(npm root -g 2>/dev/null || true)"
+  NPM_COPY="$NPM_ROOT/$CLAUDE_NPM_PACKAGE"
+  if [ -n "$NPM_ROOT" ] && [ -d "$NPM_COPY" ]; then
+    if running_from "$(dirname "$NPM_COPY")"; then
+      echo "==> npm copy of Claude Code kept for now: a session is running from it."
+    elif [ ! -w "$NPM_ROOT" ]; then
+      echo "!! npm copy of Claude Code found; remove it with: sudo npm uninstall -g $CLAUDE_NPM_PACKAGE" >&2
+    else
+      echo "==> Removing the npm copy of Claude Code (the native copy stays)..."
+      npm uninstall -g "$CLAUDE_NPM_PACKAGE" \
+        || echo "!! npm uninstall failed; run: npm uninstall -g $CLAUDE_NPM_PACKAGE" >&2
+    fi
+  fi
+fi
+hash -r
+
 if ! command -v claude >/dev/null 2>&1; then
   echo "==> Installing Claude Code CLI (native installer)..."
   curl -fsSL https://claude.ai/install.sh | bash
