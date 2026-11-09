@@ -75,6 +75,8 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
 
 - **Record architectural decisions where the code lives.** After a commit that lands a real architectural choice, write an ADR (`~/.claude/guides/core/docs-folder.md`, template `~/.claude/templates/adr-template.md`). Skip trivial, cosmetic and cleanup commits. Rationale kept only in commit messages is rationale nobody finds.
 - **One fact per memory file, with an index of pointers.** Never inline content into the index, and leave no file the index does not reference.
+- **Keep `MEMORY.md` inside its load limit.** Only the first 200 lines or 25KB load at session start, whichever comes first; the rest is dropped. One line per entry, about 150 characters: title plus the hook needed to judge relevance. Commit hashes, PR numbers and other detail go in the topic file. After every memory write, check `wc -lc MEMORY.md`; near the limit, shorten the longest lines first (`awk '{print length, NR}' MEMORY.md | sort -rn | head`), then merge or drop stale entries. When a memory is merged, superseded or wrong, delete its file and its index line together.
+  *Cost: an index grew to 25KB; its last 4 of 126 lines were cut and those memories never loaded.*
 - **Memory is context, not truth.** Verify anything a stored note claims about the code against the code before acting on it.
 
 ## 9. Safety
