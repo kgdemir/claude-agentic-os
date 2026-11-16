@@ -421,20 +421,25 @@ fi
 #     security             security-guidance
 #     Claude setup         claude-code-setup claude-md-management plugin-dev
 #                          skill-creator
-#     MCP and LSP tools    context7 github playwright typescript-lsp
+#     MCP and LSP tools    context7 github playwright typescript-lsp csharp-lsp
 PLUGIN_SOURCES="JuliusBrussee/caveman
 mksglu/context-mode
 nikhaldi/drywall
 https://github.com/affaan-m/ECC.git
 zilliztech/memsearch
-anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier feature-dev commit-commands superpowers frontend-design security-guidance claude-code-setup claude-md-management plugin-dev skill-creator context7 github playwright typescript-lsp"
+anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier feature-dev commit-commands superpowers frontend-design security-guidance claude-code-setup claude-md-management plugin-dev skill-creator context7 github playwright typescript-lsp csharp-lsp"
+
+# Language servers for the LSP plugins above, each one command line.
+TS_LSP_INSTALL="npm install -g typescript-language-server typescript"
+CS_LSP_INSTALL="dotnet tool install --global csharp-ls"
+DOTNET_TOOLS_DIR="$HOME/.dotnet/tools"
 
 if [ -z "$WITH_PLUGINS" ]; then
   if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
     WITH_PLUGINS=no
   else
     echo
-    echo "Plugin set: caveman, context-mode, drywall, ecc, memsearch, and 16 plugins"
+    echo "Plugin set: caveman, context-mode, drywall, ecc, memsearch, and 17 plugins"
     echo "from Anthropic's official marketplace (review, security, Claude setup, MCP"
     echo "and LSP tools). The installer adds each marketplace, installs the latest"
     echo "version of the listed plugins, enables them, and turns on auto-update so"
@@ -472,6 +477,9 @@ offer_install() { # offer_install <tool> <why> <how> [package]
   esac
   case "$tool" in
     claude) curl -fsSL https://claude.ai/install.sh | bash ;;
+    # Unquoted on purpose: each constant is one command line, split into words.
+    typescript-language-server) $TS_LSP_INSTALL || return 1 ;;
+    csharp-ls) $CS_LSP_INSTALL || return 1 ;;
     *) pkg_install "$package" || return 1 ;;
   esac
   hash -r
@@ -659,6 +667,38 @@ with open(path, "w") as fh:
     fh.write("\n")
 print(f"    enabled {len(ids)} plugin(s), auto-update on, in {path}")
 PY
+
+  # An LSP plugin only names its language server; the program is installed on
+  # its own, and without it the LSP tool cannot start (guides/tools/lsp.md).
+  # Asked like any missing tool: --install-deps installs, --no-deps prints.
+  case "$INSTALLED_PLUGIN_IDS" in
+    *typescript-lsp@*)
+      if ! command -v npm >/dev/null 2>&1; then
+        echo "!! typescript-lsp: no npm, so typescript-language-server is not installed." >&2
+        echo "   Install npm, then run: $TS_LSP_INSTALL" >&2
+      elif ! offer_install typescript-language-server \
+           "typescript-lsp needs it to answer code lookups in TypeScript and JavaScript." \
+           "$TS_LSP_INSTALL"; then
+        echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
+      fi
+      ;;
+  esac
+  case "$INSTALLED_PLUGIN_IDS" in
+    *csharp-lsp@*)
+      if ! command -v dotnet >/dev/null 2>&1; then
+        echo "!! csharp-lsp: no dotnet SDK, so csharp-ls is not installed." >&2
+        echo "   Install the .NET SDK, then run: $CS_LSP_INSTALL" >&2
+      elif ! offer_install csharp-ls \
+           "csharp-lsp needs it to answer code lookups in C#." \
+           "$CS_LSP_INSTALL"; then
+        if [ -x "$DOTNET_TOOLS_DIR/csharp-ls" ]; then
+          echo "!! csharp-ls is in $DOTNET_TOOLS_DIR, which is not on PATH; add it there." >&2
+        else
+          echo "!! csharp-lsp has no server; code lookups fall back to grep." >&2
+        fi
+      fi
+      ;;
+  esac
 fi
 
 # ------------------------------------------------------- security-audit skill
@@ -1065,6 +1105,7 @@ if command -v python3 >/dev/null 2>&1; then
   install_hook check-bash-command.py 'Bash' 'bash command hook'
   install_hook log-usage.py 'Read|Skill|Agent|Task' 'usage log' PostToolUse
   install_hook log-usage.py '' 'usage log (slash commands)' UserPromptSubmit
+  install_hook check-lsp-servers.py '' 'LSP server check' SessionStart
 else
   echo "!! python3 not found; skipping the hooks" >&2
 fi

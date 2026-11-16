@@ -370,6 +370,51 @@ finally:
     else:
         os.environ["CLAUDE_CONFIG_DIR"] = old_config
 
+# LSP server hook (SessionStart): warns when an enabled LSP plugin's server program is not on PATH
+L = "check-lsp-servers.py"
+old_path = os.environ["PATH"]
+try:
+    with tempfile.TemporaryDirectory() as home:
+        config = os.path.join(home, ".claude")
+        market = os.path.join(home, "market")
+        cache = os.path.join(home, "cache")
+        tools_bin = os.path.join(home, "bin")
+        for d in (os.path.join(market, ".claude-plugin"), os.path.join(cache, ".claude-plugin"),
+                  os.path.join(config, "plugins"), tools_bin):
+            os.makedirs(d)
+        os.environ["CLAUDE_CONFIG_DIR"] = config
+        def write(path, data):
+            with open(path, "w") as fh:
+                json.dump(data, fh)
+        def enable(**plugins):
+            write(os.path.join(config, "settings.json"), {"enabledPlugins": plugins})
+        write(os.path.join(config, "plugins", "known_marketplaces.json"), {"m": {"installLocation": market}})
+        write(os.path.join(market, ".claude-plugin", "marketplace.json"),
+              {"plugins": [{"name": "a-lsp", "lspServers": {"a": {"command": "fake-a-server"}}}]})
+        write(os.path.join(config, "plugins", "installed_plugins.json"),
+              {"plugins": {"b-lsp@m": [{"installPath": cache}]}})
+        write(os.path.join(cache, ".lsp.json"), {"b": {"command": "fake-b-server"}})
+        start = {"hook_event_name": "SessionStart", "source": "startup"}
+
+        expect("no settings (silent)", L, start, None)
+        enable(**{"a-lsp@m": True})
+        expect("server named in the marketplace entry missing", L, start, "`fake-a-server` is not on PATH")
+        server = os.path.join(tools_bin, "fake-a-server")
+        open(server, "w").close()
+        os.chmod(server, 0o755)
+        os.environ["PATH"] = tools_bin + os.pathsep + old_path
+        expect("server on PATH (silent)", L, start, None)
+        enable(**{"b-lsp@m": True})
+        expect("server named in the plugin's .lsp.json missing", L, start, "`fake-b-server` is not on PATH")
+        enable(**{"b-lsp@m": False})
+        expect("plugin disabled (silent)", L, start, None)
+finally:
+    os.environ["PATH"] = old_path
+    if old_config is None:
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    else:
+        os.environ["CLAUDE_CONFIG_DIR"] = old_config
+
 
 if failures:
     print("\n".join(failures))

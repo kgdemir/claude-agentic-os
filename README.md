@@ -67,7 +67,7 @@ holding them.
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
 | **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, which skill or review tool fits a task, plugin-specific rules |
-| **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating — plus 16 named plugins from Anthropic's official marketplace |
+| **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating — plus 17 named plugins from Anthropic's official marketplace |
 | **Security-audit skill** | Cloudflare's `security-audit` skill in `~/.claude/skills/`, installed with the `skills` CLI |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
@@ -165,6 +165,7 @@ only when `settings.json` does not already carry them:
     redis.md                     honest fallback, one connection, TTLs, no KEYS
     github-actions.md            SHA-pinned actions, least privilege, no script injection
     dependency-updates.md        Dependabot/Renovate grouping, majors one at a time
+    lsp.md                       code lookups through the LSP tool, not grep; missing servers
     skills.md                    which skill, review command or plugin to use for a task
   features/                      read when the project has that feature
     realtime-media.md            WebSocket, SignalR, WebRTC, SFU: docs and hub rules
@@ -212,6 +213,8 @@ only when `settings.json` does not already carry them:
                                  skill and agent use to append-only logs
                                  (memory/.access.log, ~/.claude/usage/*.log);
                                  --report memory|guides|plugins totals them
+  check-lsp-servers.py           SessionStart hook: warns when an enabled LSP
+                                 plugin's language server is not on PATH
 ~/.claude/skills/security-audit/ the security-audit skill (only with --with-security-audit)
 ~/.claude/skill-backups/         earlier copies of that skill, as .tar.backup-<timestamp>
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)
@@ -231,7 +234,7 @@ marketplaces, installs the plugins listed below, enables them, and sets
 | drywall | `nikhaldi/drywall` | duplicate-code detection |
 | ecc | `https://github.com/affaan-m/ECC.git` | a large agent, skill and hook collection |
 | memsearch | `zilliztech/memsearch` | searchable session memory, one database per project |
-| 16 named plugins | `anthropics/claude-plugins-official` | review and workflow: `code-review`, `pr-review-toolkit`, `code-simplifier`, `feature-dev`, `commit-commands`, `superpowers`, `frontend-design`; security: `security-guidance`; Claude setup: `claude-code-setup`, `claude-md-management`, `plugin-dev`, `skill-creator`; MCP and LSP tools: `context7`, `github`, `playwright`, `typescript-lsp` |
+| 17 named plugins | `anthropics/claude-plugins-official` | review and workflow: `code-review`, `pr-review-toolkit`, `code-simplifier`, `feature-dev`, `commit-commands`, `superpowers`, `frontend-design`; security: `security-guidance`; Claude setup: `claude-code-setup`, `claude-md-management`, `plugin-dev`, `skill-creator`; MCP and LSP tools: `context7`, `github`, `playwright`, `typescript-lsp`, `csharp-lsp` |
 
 For the first five, the catalog is read from each marketplace rather than
 hard-coded, so a plugin an upstream repository adds later is installed too,
@@ -248,6 +251,14 @@ only skips the step if you decline. `--install-deps` answers yes to all of them,
 `--no-deps` answers no and just prints the command. The same offer covers `npm`
 when `ccusage` is wanted for the statusline. Re-running installs nothing twice:
 a marketplace or plugin already there is reported as present.
+
+An LSP plugin only names its language server; the program is installed on its
+own. The same offer covers both: `typescript-language-server` for
+`typescript-lsp` (`npm install -g typescript-language-server typescript`, needs
+`npm`) and `csharp-ls` for `csharp-lsp` (`dotnet tool install --global
+csharp-ls`, needs the .NET SDK; it lands in `~/.dotnet/tools`, which must be on
+`PATH`). Without its server the `LSP` tool cannot start, and the
+`check-lsp-servers.py` hook says so at session start (ADR-0013).
 
 Two settings are written for you:
 

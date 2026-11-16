@@ -25,8 +25,11 @@ It is an installer, so read it before you run it. In full it can:
   after asking;
 - add plugin marketplaces from the six GitHub repositories named in the README
   and install the plugins they publish (from Anthropic's official marketplace,
-  only the 16 the README names), which is third-party code that then runs
+  only the 17 the README names), which is third-party code that then runs
   inside your Claude Code sessions;
+- run `npm install -g typescript-language-server typescript` and
+  `dotnet tool install --global csharp-ls`, after asking, so the two LSP plugins
+  have their language servers;
 - run `npx skills@<pinned version> add` to fetch Cloudflare's `security-audit`
   skill from GitHub, after asking: the CLI runs with a throwaway `HOME` and
   config folder and telemetry off, and the installer copies the result into

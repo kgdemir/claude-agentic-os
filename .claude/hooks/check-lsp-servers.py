@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""SessionStart hook: warn when an enabled LSP plugin's language server program
+is not on PATH.
+
+An LSP plugin only names the server program (`lspServers.<name>.command`); the
+program itself is installed separately. Without it the `LSP` tool has nothing to
+ask, and every code lookup falls back to grep without anyone noticing (see
+guides/tools/lsp.md).
+
+Warn-only and silent when every server is found. Reads the user's settings.json
+for enabled plugins, and each plugin's `lspServers` from its marketplace entry,
+its `.claude-plugin/plugin.json` and its `.lsp.json`.
+"""
+import json
+import os
+import pathlib
+import shutil
+import sys
+
+PLUGIN_MANIFEST = pathlib.Path(".claude-plugin") / "plugin.json"
+LSP_FILE = ".lsp.json"
+MARKETPLACE_MANIFEST = pathlib.Path(".claude-plugin") / "marketplace.json"
+GUIDE = "~/.claude/guides/tools/lsp.md"
+
+
+def config_dir() -> pathlib.Path:
+    return pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR") or pathlib.Path.home() / ".claude")
+
+
+def load(path: pathlib.Path):
+    """JSON from path, or None when it is absent. A malformed file is reported."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        print(f"check-lsp-servers: {path}: {exc}", file=sys.stderr)
+        return None
+
+
+def server_commands(servers, base: pathlib.Path) -> list:
+    """Commands named in an `lspServers` value: an object, or a path to a JSON file."""
+    if isinstance(servers, str):
+        servers = load(base / servers)
+    if not isinstance(servers, dict):
+        return []
+    return [s["command"] for s in servers.values()
+            if isinstance(s, dict) and isinstance(s.get("command"), str)]
+
+
+def marketplace_entry(config: pathlib.Path, market: str, plugin: str) -> dict:
+    known = load(config / "plugins" / "known_marketplaces.json") or {}
+    entry = known.get(market) if isinstance(known, dict) else None
+    location = entry.get("installLocation") if isinstance(entry, dict) else None
+    root = pathlib.Path(location) if location else config / "plugins" / "marketplaces" / market
+    catalog = load(root / MARKETPLACE_MANIFEST) or {}
+    plugins = catalog.get("plugins", []) if isinstance(catalog, dict) else []
+    for item in plugins:
+        if isinstance(item, dict) and item.get("name") == plugin:
+            return item
+    return {}
+
+
+def install_paths(config: pathlib.Path, plugin_id: str) -> list:
+    installed = load(config / "plugins" / "installed_plugins.json") or {}
+    records = installed.get("plugins", {}).get(plugin_id, []) if isinstance(installed, dict) else []
+    return [pathlib.Path(r["installPath"]) for r in records
+            if isinstance(r, dict) and isinstance(r.get("installPath"), str)]
+
+
+def missing_servers(config: pathlib.Path) -> list:
+    """(plugin id, command, readme or None) for each server program not on PATH."""
+    settings = load(config / "settings.json") or {}
+    enabled = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else {}
+    if not isinstance(enabled, dict):
+        return []
+    missing = []
+    for plugin_id, on in sorted(enabled.items()):
+        if on is not True or "@" not in plugin_id:
+            continue
+        plugin, market = plugin_id.split("@", 1)
+        paths = install_paths(config, plugin_id)
+        commands = server_commands(marketplace_entry(config, market, plugin).get("lspServers"), config)
+        for path in paths:
+            manifest = load(path / PLUGIN_MANIFEST) or {}
+            if isinstance(manifest, dict):
+                commands += server_commands(manifest.get("lspServers"), path)
+            commands += server_commands(load(path / LSP_FILE), path)
+        readme = next((p / "README.md" for p in paths if (p / "README.md").is_file()), None)
+        for command in dict.fromkeys(commands):
+            if shutil.which(command) is None:
+                missing.append((plugin_id, command, readme))
+    return missing
+
+
+def main() -> int:
+    missing = missing_servers(config_dir())
+    if not missing:
+        return 0
+    lines = []
+    for plugin_id, command, readme in missing:
+        how = f" Its install command is in {readme}." if readme else ""
+        lines.append(f"`{plugin_id}` is enabled but its language server `{command}` is not on PATH.{how}")
+    note = (
+        " ".join(lines) + " The `LSP` tool cannot answer for those languages this session. "
+        "Tell the user now and offer the install (a new session picks it up); until then, say "
+        f"that grep results are text matches, not resolved references ({GUIDE})."
+    )
+    json.dump(
+        {"systemMessage": " ".join(lines),
+         "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": note}},
+        sys.stdout,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
