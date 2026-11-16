@@ -81,3 +81,10 @@ Introduced in the commit that adds this ADR.
 - Supply chain: the skill content is whatever upstream `main` holds at install
   time; only the CLI is pinned. Re-running the installer is what updates it,
   and the diff against the installed copy shows whether anything changed.
+
+## Amendment 2026-11-17
+
+- `csharp-lsp` joins the named list, so there are now 17 names. With it, C#
+  code gets the same `LSP` lookups as TypeScript. The installer also offers
+  the language server program each of the two LSP plugins needs (ADR-0013),
+  in commit `f26d4cd`.
