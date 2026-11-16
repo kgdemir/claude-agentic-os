@@ -82,7 +82,7 @@ Introduced in the commit that adds this ADR.
   time; only the CLI is pinned. Re-running the installer is what updates it,
   and the diff against the installed copy shows whether anything changed.
 
-## Amendment 2026-11-17
+## Amendment 2026-11-16
 
 - `csharp-lsp` joins the named list, so there are now 17 names. With it, C#
   code gets the same `LSP` lookups as TypeScript. The installer also offers

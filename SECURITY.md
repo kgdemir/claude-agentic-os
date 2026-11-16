@@ -15,7 +15,7 @@ no details.
 
 It is an installer, so read it before you run it. In full it can:
 
-- write Markdown rules, templates, two hook scripts and a statusline into
+- write Markdown rules, templates, four hook scripts and a statusline into
   `~/.claude/`, backing up every file whose content it changes as
   `<name>.backup-<timestamp>`;
 - merge keys into `~/.claude/settings.json`, never overwrite the file;
@@ -35,6 +35,10 @@ It is an installer, so read it before you run it. In full it can:
   config folder and telemetry off, and the installer copies the result into
   `~/.claude/skills/security-audit`, backing up a changed copy as a tar file in
   `~/.claude/skill-backups/` first;
+- with `--with-launcher`, install `runclaude`, which on each launch installs
+  missing tools without a further prompt and uninstalls an npm global
+  `@anthropic-ai/claude-code` that sits beside the native Claude Code (never
+  while a session runs from it, and never with `sudo`; ADR-0014);
 - append a function to your shell rc, set your global git identity and start an
   interactive login — each asked separately, and each declined automatically
   when there is no terminal or when `-y` is passed.
@@ -43,8 +47,11 @@ It is an installer, so read it before you run it. In full it can:
 reduces it to writing Markdown and the hook scripts into `~/.claude/` and
 registering the hooks in `settings.json`.
 
-The hooks run on every Agent and Bash call in your sessions. They only add a
-reminder; they never block a command, write a file or use the network. The Bash
+The hooks never block a command or use the network. The Agent and Bash hooks
+only add a reminder. The usage-log hook appends one line per memory, guide,
+skill or agent use to logs under `~/.claude/usage/` and each project's memory
+folder (ADR-0012). The LSP hook reads plugin files at session start and only
+warns (ADR-0013). The Bash
 hook runs `git diff --cached` (and `git diff` for `git commit -a`) in the
 folder the commit runs in (after any `cd` or `git -C`), with a 5-second limit, to look for secret-shaped text. A
 match is reported by file and kind only; the value is never printed, logged or
@@ -62,8 +69,9 @@ moved by any `cd` and `git -C`. Nothing from it is printed or kept.
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and, when you ask for it,
   `ECC_DISABLED_HOOKS`.
 - It never sends anything anywhere. The only network access is the package
-  manager, the Claude Code installer, the plugin marketplaces, and npm and
-  GitHub for the `security-audit` skill.
+  manager, the Claude Code installer, the plugin marketplaces, npm and NuGet
+  for the two language servers, and npm and GitHub for the `security-audit`
+  skill.
 - It never deletes a file during an install. Replacements are backed up first,
   and guides from the old flat layout are renamed to
   `<name>.backup-<timestamp>`, not removed. A changed `security-audit` skill

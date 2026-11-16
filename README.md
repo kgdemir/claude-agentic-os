@@ -378,6 +378,11 @@ will and will not do:
   (installing Homebrew itself if absent) or `sudo apt/dnf/zypper/pacman` on Linux.
 - It pulls **only** when you are already on the default branch and the working
   tree is clean, and only as a fast-forward. It never switches branches for you.
+- It puts the native Claude Code (`~/.local/bin`) first on `PATH`, after nvm
+  and Homebrew have loaded, so another copy never starts instead. When an npm
+  global `@anthropic-ai/claude-code` sits beside it, it **uninstalls that copy**:
+  the two fight over updates. The copy stays while a session runs from it, and
+  when its folder needs `sudo` only the command is printed (ADR-0014).
 - It mirrors `GITHUB_PERSONAL_ACCESS_TOKEN` into `GH_TOKEN` when that variable is
   set, so `gh` and git authenticate without an interactive login. It never writes
   that token anywhere.

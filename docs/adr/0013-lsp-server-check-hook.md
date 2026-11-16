@@ -1,6 +1,6 @@
 # ADR-0013: Install LSP servers with their plugins, and check them at session start
 
-**Date**: 2026-11-17
+**Date**: 2026-11-16
 **Status**: accepted
 **Deciders**: Kerim Gökhan DEMİR
 
@@ -73,3 +73,22 @@ Introduced in commit `f26d4cd`.
   major update.
 - Only the user's `settings.json` is read. A plugin enabled only in a project's
   settings is not checked.
+
+## Amendment 2026-11-16
+
+- TypeScript 7, the native port, ships no `tsserver`, and
+  `npm install -g typescript` now installs it. A global
+  `npm install -g typescript-language-server typescript` therefore gave a server
+  that failed with "Could not find a valid TypeScript installation".
+- In commit `6d22947`, the installer now puts `typescript-language-server@6` and `typescript@6` in
+  their own folder, `~/.local/share/ts-lsp`, linked as
+  `~/.local/bin/typescript-language-server`. It skips the step when that
+  folder already has a `tsserver.js`, and warns when another copy comes first
+  on `PATH`. A project or global `tsc` on TypeScript 7 is left alone; the server
+  falls back to its own TypeScript 6. The major versions are constants in
+  `install.sh`.
+- The hook also warns when `typescript-language-server` has no
+  `typescript/lib/tsserver.js` in the session's project or in a folder above
+  the server's real file.
+- Alternative rejected: pin the whole project to TypeScript 6. It holds back
+  the compiler for a tool that only reads code.

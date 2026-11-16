@@ -17,4 +17,5 @@ renumbered; an accepted ADR is superseded, not rewritten.
 | [0010](0010-pack-gates-ci-live-sync-and-backup-pruning.md) | Pack gates in one script, CI, a live-sync script and opt-in backup pruning | accepted | 2026-10-15 |
 | [0011](0011-official-plugins-by-name-and-security-audit-skill.md) | Official plugins by name, and the security-audit skill through a pinned skills CLI | accepted | 2026-10-16 |
 | [0012](0012-usage-log-hook.md) | A usage-log hook for context housekeeping | accepted | 2026-11-09 |
-| [0013](0013-lsp-server-check-hook.md) | Install LSP servers with their plugins, and check them at session start | accepted | 2026-11-17 |
+| [0013](0013-lsp-server-check-hook.md) | Install LSP servers with their plugins, and check them at session start | accepted | 2026-11-16 |
+| [0014](0014-launcher-keeps-one-claude-code.md) | The launcher keeps one Claude Code, the native one, first on PATH | accepted | 2026-11-10 |
