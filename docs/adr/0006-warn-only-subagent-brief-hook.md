@@ -64,3 +64,9 @@ Introduced in commit `b46dbb3`.
 ### Risks
 - Hook output fields and matcher semantics are version-specific; re-verify after
   a major Claude Code update.
+
+## Amendment 2026-11-16
+
+- The hook now also blocks a new agent near the 5-hour or weekly usage limit,
+  the first case where it is not warn-only (ADR-0015). Brief checks stay
+  warn-only.

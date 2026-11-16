@@ -349,6 +349,18 @@ if [ "$HAS_JQ" -eq 1 ]; then
     if [ -n "$limits_line" ]; then limits_line="$limits_line  📅 $week_txt"; else limits_line="📅 $week_txt"; fi
   fi
 fi
+# Save both windows for check-agent-brief.py: hooks and the model never see
+# rate_limits, only the statusline does (ADR-0015). A local file write, no
+# extra request. Written to a temp file and moved, so a reader never sees half.
+if [ "$HAS_JQ" -eq 1 ]; then
+  limits_json=$(echo "$input" | jq -c '.rate_limits // empty | {five_hour, seven_day}' 2>/dev/null)
+  if [ -n "$limits_json" ]; then
+    limits_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/usage"
+    mkdir -p "$limits_dir" \
+      && printf '%s\n' "$limits_json" > "$limits_dir/limits.json.$$" \
+      && mv -f "$limits_dir/limits.json.$$" "$limits_dir/limits.json"
+  fi
+fi
 
 # ---- logged-in account email (from ~/.claude.json) ----
 account_email=""

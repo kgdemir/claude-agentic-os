@@ -1033,10 +1033,12 @@ fi
 
 # --------------------------------------------------------------------- hooks
 
-# Hooks; none ever blocks a call.
+# Hooks; only check-agent-brief.py ever blocks a call, and only near a usage limit.
 #   check-agent-brief.py   an Agent brief without Goal:/Files:/Done: lines, so
 #                          subagents do not stall on questions while their
-#                          cache expires (ADR-0006)
+#                          cache expires (ADR-0006); blocks a new agent near
+#                          the 5-hour or weekly limit the statusline saves
+#                          (ADR-0015)
 #   check-bash-command.py  a shell command breaking a core rule: git add -A,
 #                          force push, reset --hard, AI attribution, a piped
 #                          gate without pipefail, secrets in the staged diff

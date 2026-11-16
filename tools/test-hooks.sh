@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 python3 -I - "$PWD/.claude/hooks" <<'PY'
-import json, os, subprocess, sys, tempfile
+import json, os, subprocess, sys, tempfile, time
 
 HOOKS = sys.argv[1]
 HOOK_TIMEOUT_SECONDS = 10
@@ -17,7 +17,12 @@ def run(hook, event):
                              capture_output=True, text=True, check=True, timeout=HOOK_TIMEOUT_SECONDS).stdout
     except subprocess.TimeoutExpired:
         return "HOOK HUNG"
-    return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else ""
+    if not out.strip():
+        return ""
+    result = json.loads(out)["hookSpecificOutput"]
+    if result.get("permissionDecision") == "deny":
+        return "DENY " + result["permissionDecisionReason"]
+    return result["additionalContext"]
 
 def bash(command, cwd=""):
     return {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd}
@@ -172,9 +177,39 @@ expect("bad input", B, {"tool_name": "Bash", "tool_input": "x"}, None)
 # brief hook
 A = "check-agent-brief.py"
 agent = lambda prompt, kind="general-purpose": {"tool_name": "Agent", "tool_input": {"prompt": prompt, "subagent_type": kind}}
-expect("brief missing", A, agent("do the thing"), "`Goal:`")
-expect("brief complete", A, agent("Goal: x\nFiles: y\nDone: z"), None)
-expect("brief exempt", A, agent("find x", "Explore"), None)
+old_config = os.environ.get("CLAUDE_CONFIG_DIR")
+try:
+    with tempfile.TemporaryDirectory() as config:
+        os.environ["CLAUDE_CONFIG_DIR"] = config
+        expect("brief missing", A, agent("do the thing"), "`Goal:`")
+        expect("brief complete", A, agent("Goal: x\nFiles: y\nDone: z"), None)
+        expect("brief exempt", A, agent("find x", "Explore"), None)
+
+        # usage limits saved by the statusline (ADR-0015)
+        complete = agent("Goal: x\nFiles: y\nDone: z")
+        os.makedirs(os.path.join(config, "usage"))
+        def limits(five, week=10, resets_in=3600):
+            with open(os.path.join(config, "usage", "limits.json"), "w") as f:
+                json.dump({"five_hour": {"used_percentage": five, "resets_at": time.time() + resets_in},
+                           "seven_day": {"used_percentage": week, "resets_at": time.time() + 86400}}, f)
+        limits(50)
+        expect("limits low (silent)", A, complete, None)
+        limits(80)
+        expect("limits high warns", A, complete, "5-hour limit 80% used")
+        limits(50, week=91)
+        expect("weekly limit blocks", A, complete, "DENY Agent not started: weekly limit 91% used")
+        limits(95)
+        expect("limit blocks exempt type too", A, agent("find x", "Explore"), "DENY")
+        limits(95, resets_in=-60)
+        expect("limit already reset (silent)", A, complete, None)
+        with open(os.path.join(config, "usage", "limits.json"), "w") as f:
+            f.write("{not json")
+        expect("limits file malformed (silent)", A, complete, None)
+finally:
+    if old_config is None:
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    else:
+        os.environ["CLAUDE_CONFIG_DIR"] = old_config
 
 # usage log (PostToolUse + UserPromptSubmit): checks the log lines it writes, and that it stays silent
 U = "log-usage.py"
