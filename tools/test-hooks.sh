@@ -408,6 +408,25 @@ try:
         expect("server named in the plugin's .lsp.json missing", L, start, "`fake-b-server` is not on PATH")
         enable(**{"b-lsp@m": False})
         expect("plugin disabled (silent)", L, start, None)
+
+        # typescript-language-server also needs tsserver.js beside it, which TypeScript 7 lacks
+        write(os.path.join(market, ".claude-plugin", "marketplace.json"),
+              {"plugins": [{"name": "ts-lsp", "lspServers": {"t": {"command": "typescript-language-server"}}}]})
+        enable(**{"ts-lsp@m": True})
+        srv = os.path.join(home, "srv")
+        real = os.path.join(srv, "node_modules", ".bin", "typescript-language-server")
+        os.makedirs(os.path.dirname(real))
+        open(real, "w").close()
+        os.chmod(real, 0o755)
+        os.symlink(real, os.path.join(tools_bin, "typescript-language-server"))
+        expect("TypeScript server with no tsserver.js beside it", L, start, "TypeScript 7 ships none")
+        workspace = os.path.join(home, "project")
+        os.makedirs(os.path.join(workspace, "node_modules", "typescript", "lib"))
+        open(os.path.join(workspace, "node_modules", "typescript", "lib", "tsserver.js"), "w").close()
+        expect("tsserver.js in the project (silent)", L, dict(start, cwd=workspace), None)
+        os.makedirs(os.path.join(srv, "node_modules", "typescript", "lib"))
+        open(os.path.join(srv, "node_modules", "typescript", "lib", "tsserver.js"), "w").close()
+        expect("tsserver.js beside the server (silent)", L, start, None)
 finally:
     os.environ["PATH"] = old_path
     if old_config is None:

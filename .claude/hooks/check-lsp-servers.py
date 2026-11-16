@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """SessionStart hook: warn when an enabled LSP plugin's language server program
-is not on PATH.
+is not on PATH, or cannot find the library it drives.
 
 An LSP plugin only names the server program (`lspServers.<name>.command`); the
 program itself is installed separately. Without it the `LSP` tool has nothing to
@@ -21,6 +21,11 @@ PLUGIN_MANIFEST = pathlib.Path(".claude-plugin") / "plugin.json"
 LSP_FILE = ".lsp.json"
 MARKETPLACE_MANIFEST = pathlib.Path(".claude-plugin") / "marketplace.json"
 GUIDE = "~/.claude/guides/tools/lsp.md"
+# Servers that drive a library found next to them, and the file they load from
+# it. typescript-language-server runs TypeScript's tsserver, which TypeScript 7
+# (the native port) no longer ships, so a server installed beside TypeScript 7
+# starts and then fails with "Could not find a valid TypeScript installation".
+NEEDS_BESIDE = {"typescript-language-server": pathlib.Path("node_modules") / "typescript" / "lib" / "tsserver.js"}
 
 
 def config_dir() -> pathlib.Path:
@@ -68,8 +73,16 @@ def install_paths(config: pathlib.Path, plugin_id: str) -> list:
             if isinstance(r, dict) and isinstance(r.get("installPath"), str)]
 
 
-def missing_servers(config: pathlib.Path) -> list:
-    """(plugin id, command, readme or None) for each server program not on PATH."""
+def finds_beside(program: str, needed: pathlib.Path, workspace: str) -> bool:
+    """True when `needed` sits in the project, or in a folder above the program's real file."""
+    if workspace and (pathlib.Path(workspace) / needed).is_file():
+        return True
+    real = pathlib.Path(os.path.realpath(program))
+    return any((folder / needed).is_file() for folder in real.parents)
+
+
+def missing_servers(config: pathlib.Path, workspace: str = "") -> list:
+    """(plugin id, command, problem, readme or None) for each server that cannot start."""
     settings = load(config / "settings.json") or {}
     enabled = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else {}
     if not isinstance(enabled, dict):
@@ -88,19 +101,31 @@ def missing_servers(config: pathlib.Path) -> list:
             commands += server_commands(load(path / LSP_FILE), path)
         readme = next((p / "README.md" for p in paths if (p / "README.md").is_file()), None)
         for command in dict.fromkeys(commands):
-            if shutil.which(command) is None:
-                missing.append((plugin_id, command, readme))
+            program = shutil.which(command)
+            needed = NEEDS_BESIDE.get(command)
+            if program is None:
+                missing.append((plugin_id, command, "is not on PATH", readme))
+            elif needed and not finds_beside(program, needed, workspace):
+                missing.append((plugin_id, command,
+                                f"at {os.path.realpath(program)} has no `{needed.relative_to('node_modules')}` "
+                                "beside it (TypeScript 7 ships none; install TypeScript 6 next to the server)",
+                                readme))
     return missing
 
 
 def main() -> int:
-    missing = missing_servers(config_dir())
+    try:
+        event = json.load(sys.stdin)
+    except ValueError:
+        event = {}
+    cwd = event.get("cwd") if isinstance(event, dict) else None
+    missing = missing_servers(config_dir(), cwd if isinstance(cwd, str) else "")
     if not missing:
         return 0
     lines = []
-    for plugin_id, command, readme in missing:
+    for plugin_id, command, problem, readme in missing:
         how = f" Its install command is in {readme}." if readme else ""
-        lines.append(f"`{plugin_id}` is enabled but its language server `{command}` is not on PATH.{how}")
+        lines.append(f"`{plugin_id}` is enabled but its language server `{command}` {problem}.{how}")
     note = (
         " ".join(lines) + " The `LSP` tool cannot answer for those languages this session. "
         "Tell the user now and offer the install (a new session picks it up); until then, say "

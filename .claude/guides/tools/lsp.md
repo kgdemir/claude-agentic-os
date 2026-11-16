@@ -30,6 +30,16 @@ classes, interfaces, variables, types.
   *Cost: in a C# and TypeScript project, `typescript-lsp` was on but `typescript-language-server`
   was not installed, and no C# plugin was installed although `csharp-lsp` exists. The `LSP` tool
   was never used, and every lookup in the session, the agents' too, fell back to grep unnoticed.*
+- **TypeScript 7 has no language server yet; keep TypeScript 6 beside the server.**
+  `typescript-language-server` drives TypeScript's `tsserver`, which TypeScript 7 (the native
+  port) does not ship. It uses the project's `node_modules/typescript` when that has a `tsserver`,
+  else the TypeScript installed next to it. So install the server in its own folder with
+  `typescript@6` (`npm install --prefix ~/.local/share/ts-lsp typescript-language-server@6
+  typescript@6`, linked into `~/.local/bin`), never with a global `npm install -g typescript`,
+  and leave the project and the global `tsc` on 7. Definitions, references and callers come out
+  the same. Move to TypeScript 7's own server once it ships one.
+  *Cost: a global `npm install -g typescript-language-server typescript` pulled TypeScript 7, and
+  the server failed with "Could not find a valid TypeScript installation".*
 - **When a plugin or its server is missing,** say so at once and offer both installs through
   `AskUserQuestion`, with the exact commands (`claude plugin install <plugin>@claude-plugins-official`
   and the README's server command). Language servers are loaded when a session starts, so a new

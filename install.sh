@@ -429,8 +429,17 @@ https://github.com/affaan-m/ECC.git
 zilliztech/memsearch
 anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier feature-dev commit-commands superpowers frontend-design security-guidance claude-code-setup claude-md-management plugin-dev skill-creator context7 github playwright typescript-lsp csharp-lsp"
 
-# Language servers for the LSP plugins above, each one command line.
-TS_LSP_INSTALL="npm install -g typescript-language-server typescript"
+# Language servers for the LSP plugins above. typescript-language-server drives
+# TypeScript's tsserver, which TypeScript 7 (the native port) no longer ships,
+# so the server gets its own folder with TypeScript 6 beside it, linked into
+# ~/.local/bin; a global tsc of any version is left alone. Once TypeScript 7
+# ships its own language server, this can move to it.
+TS_LSP_SERVER_MAJOR="6"
+TS_LSP_TYPESCRIPT_MAJOR="6"
+TS_LSP_DIR="$HOME/.local/share/ts-lsp"
+TS_LSP_LINK="$HOME/.local/bin/typescript-language-server"
+TS_LSP_TSSERVER="$TS_LSP_DIR/node_modules/typescript/lib/tsserver.js"
+TS_LSP_INSTALL="npm install --prefix $TS_LSP_DIR typescript-language-server@$TS_LSP_SERVER_MAJOR typescript@$TS_LSP_TYPESCRIPT_MAJOR"
 CS_LSP_INSTALL="dotnet tool install --global csharp-ls"
 DOTNET_TOOLS_DIR="$HOME/.dotnet/tools"
 
@@ -452,12 +461,12 @@ fi
 # A tool this installer needs is missing: say what it is for, offer to install
 # it, and on a no return non-zero so the caller can skip its step. --install-deps
 # answers yes for every one of these, --no-deps answers no.
-offer_install() { # offer_install <tool> <why> <how> [package]
+# The question half of offer_install: say what is missing and why, and return
+# zero when it may be installed.
+confirm_install() { # confirm_install <tool> <why> <how>
   local tool="$1"
   local why="$2"
   local how="$3"
-  local package="${4:-$1}"
-  command -v "$tool" >/dev/null 2>&1 && return 0
   echo
   echo "$tool is not installed. $why"
   if [ "$INSTALL_DEPS" = "no" ]; then
@@ -472,13 +481,21 @@ offer_install() { # offer_install <tool> <why> <how> [package]
     answer="$(ask "Install $tool now?" 'yes')"
   fi
   case "$answer" in
-    [Yy]*) ;;
+    [Yy]*) return 0 ;;
     *) echo "    Skipped. Install it with: $how"; return 1 ;;
   esac
+}
+
+offer_install() { # offer_install <tool> <why> <how> [package]
+  local tool="$1"
+  local why="$2"
+  local how="$3"
+  local package="${4:-$1}"
+  command -v "$tool" >/dev/null 2>&1 && return 0
+  confirm_install "$tool" "$why" "$how" || return 1
   case "$tool" in
     claude) curl -fsSL https://claude.ai/install.sh | bash ;;
-    # Unquoted on purpose: each constant is one command line, split into words.
-    typescript-language-server) $TS_LSP_INSTALL || return 1 ;;
+    # Unquoted on purpose: the constant is one command line, split into words.
     csharp-ls) $CS_LSP_INSTALL || return 1 ;;
     *) pkg_install "$package" || return 1 ;;
   esac
@@ -676,10 +693,24 @@ PY
       if ! command -v npm >/dev/null 2>&1; then
         echo "!! typescript-lsp: no npm, so typescript-language-server is not installed." >&2
         echo "   Install npm, then run: $TS_LSP_INSTALL" >&2
-      elif ! offer_install typescript-language-server \
-           "typescript-lsp needs it to answer code lookups in TypeScript and JavaScript." \
-           "$TS_LSP_INSTALL"; then
-        echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
+      elif [ ! -f "$TS_LSP_TSSERVER" ]; then
+        if confirm_install typescript-language-server \
+             "typescript-lsp needs it, with TypeScript $TS_LSP_TYPESCRIPT_MAJOR beside it, to answer code lookups in TypeScript and JavaScript." \
+             "$TS_LSP_INSTALL && ln -sfn $TS_LSP_DIR/node_modules/.bin/typescript-language-server $TS_LSP_LINK" \
+           && $TS_LSP_INSTALL \
+           && mkdir -p "$(dirname "$TS_LSP_LINK")" \
+           && ln -sfn "$TS_LSP_DIR/node_modules/.bin/typescript-language-server" "$TS_LSP_LINK"; then
+          echo "    installed  $TS_LSP_LINK"
+        else
+          echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
+        fi
+      fi
+      TS_LSP_FOUND="$(command -v typescript-language-server || true)"
+      if [ -f "$TS_LSP_TSSERVER" ] && [ -z "$TS_LSP_FOUND" ]; then
+        echo "!! $(dirname "$TS_LSP_LINK") is not on PATH; add it so typescript-lsp finds its server." >&2
+      elif [ -f "$TS_LSP_TSSERVER" ] && [ "$TS_LSP_FOUND" != "$TS_LSP_LINK" ]; then
+        echo "!! $TS_LSP_FOUND comes before $TS_LSP_LINK on PATH;" >&2
+        echo "   put $(dirname "$TS_LSP_LINK") first, or remove the other copy." >&2
       fi
       ;;
   esac

@@ -254,11 +254,18 @@ a marketplace or plugin already there is reported as present.
 
 An LSP plugin only names its language server; the program is installed on its
 own. The same offer covers both: `typescript-language-server` for
-`typescript-lsp` (`npm install -g typescript-language-server typescript`, needs
-`npm`) and `csharp-ls` for `csharp-lsp` (`dotnet tool install --global
+`typescript-lsp`, and `csharp-ls` for `csharp-lsp` (`dotnet tool install --global
 csharp-ls`, needs the .NET SDK; it lands in `~/.dotnet/tools`, which must be on
 `PATH`). Without its server the `LSP` tool cannot start, and the
 `check-lsp-servers.py` hook says so at session start (ADR-0013).
+
+The TypeScript server drives TypeScript's `tsserver`, which TypeScript 7 (the
+native port) does not ship. So it is installed in its own folder with
+TypeScript 6 beside it, `npm install --prefix ~/.local/share/ts-lsp
+typescript-language-server@6 typescript@6` (needs `npm`), and linked as
+`~/.local/bin/typescript-language-server`. A project and a global `tsc` on
+TypeScript 7 are left alone; the server falls back to its own TypeScript 6 for
+them. The installer warns when another copy comes first on `PATH`.
 
 Two settings are written for you:
 
