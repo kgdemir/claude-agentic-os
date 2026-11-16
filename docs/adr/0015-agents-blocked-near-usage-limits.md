@@ -15,6 +15,8 @@ note sent to it had not arrived, because a message reaches a running agent
 only at its next tool call. The main session had no way to know the limit was
 near when it started the agent.
 
+Introduced in commit `08aca8d`.
+
 ADR-0006 made `check-agent-brief.py` warn-only. This ADR adds the first case
 where it blocks.
 
@@ -73,3 +75,12 @@ where it blocks.
   written, and the hook only checks briefs.
 - A stale file from before a reset is ignored only by its reset time; a
   wrong clock could block or allow wrongly.
+
+## Amendment 2026-11-16
+
+- The statusline removes `limits.json` when Claude Code sends no
+  `rate_limits`, and stamps it with `saved_at`. The hook ignores a file older
+  than `LIMITS_MAX_AGE_SECONDS` (30 minutes), so an old login or a headless
+  run never blocks agents for days.
+- The hook compares the raw percent with both thresholds and rounds only for
+  display, so 89.6% warns and is not blocked.

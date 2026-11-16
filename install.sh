@@ -438,10 +438,34 @@ TS_LSP_SERVER_MAJOR="6"
 TS_LSP_TYPESCRIPT_MAJOR="6"
 TS_LSP_DIR="$HOME/.local/share/ts-lsp"
 TS_LSP_LINK="$HOME/.local/bin/typescript-language-server"
-TS_LSP_TSSERVER="$TS_LSP_DIR/node_modules/typescript/lib/tsserver.js"
-TS_LSP_INSTALL="npm install --prefix $TS_LSP_DIR typescript-language-server@$TS_LSP_SERVER_MAJOR typescript@$TS_LSP_TYPESCRIPT_MAJOR"
+TS_LSP_BIN="$TS_LSP_DIR/node_modules/.bin/typescript-language-server"
+TS_LSP_TSSERVER_REL="node_modules/typescript/lib/tsserver.js"
+TS_LSP_TSSERVER="$TS_LSP_DIR/$TS_LSP_TSSERVER_REL"
+# Shown to the person only; ts_lsp_install runs it with each path quoted.
+TS_LSP_INSTALL="npm install --prefix \"$TS_LSP_DIR\" typescript-language-server@$TS_LSP_SERVER_MAJOR typescript@$TS_LSP_TYPESCRIPT_MAJOR && ln -sfn \"$TS_LSP_BIN\" \"$TS_LSP_LINK\""
 CS_LSP_INSTALL="dotnet tool install --global csharp-ls"
 DOTNET_TOOLS_DIR="$HOME/.dotnet/tools"
+
+ts_lsp_install() {
+  npm install --prefix "$TS_LSP_DIR" "typescript-language-server@$TS_LSP_SERVER_MAJOR" \
+    "typescript@$TS_LSP_TYPESCRIPT_MAJOR" \
+    && mkdir -p "$(dirname "$TS_LSP_LINK")" \
+    && ln -sfn "$TS_LSP_BIN" "$TS_LSP_LINK"
+}
+
+# Zero when the typescript-language-server first on PATH has a TypeScript with
+# a tsserver in a folder above its real file, as check-lsp-servers.py checks.
+# A global install beside TypeScript 6 or older counts; one beside 7 does not.
+ts_lsp_works() {
+  local found dir
+  found="$(command -v typescript-language-server)" || return 1
+  dir="$(python3 -c 'import os, sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "$found")" || return 1
+  while :; do
+    [ -f "$dir/$TS_LSP_TSSERVER_REL" ] && return 0
+    [ "$dir" = "/" ] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
 
 if [ -z "$WITH_PLUGINS" ]; then
   if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
@@ -458,9 +482,6 @@ if [ -z "$WITH_PLUGINS" ]; then
   fi
 fi
 
-# A tool this installer needs is missing: say what it is for, offer to install
-# it, and on a no return non-zero so the caller can skip its step. --install-deps
-# answers yes for every one of these, --no-deps answers no.
 # The question half of offer_install: say what is missing and why, and return
 # zero when it may be installed.
 confirm_install() { # confirm_install <tool> <why> <how>
@@ -486,6 +507,9 @@ confirm_install() { # confirm_install <tool> <why> <how>
   esac
 }
 
+# A tool this installer needs is missing: say what it is for, offer to install
+# it, and on a no return non-zero so the caller can skip its step. --install-deps
+# answers yes for every one of these, --no-deps answers no.
 offer_install() { # offer_install <tool> <why> <how> [package]
   local tool="$1"
   local why="$2"
@@ -690,27 +714,32 @@ PY
   # Asked like any missing tool: --install-deps installs, --no-deps prints.
   case "$INSTALLED_PLUGIN_IDS" in
     *typescript-lsp@*)
-      if ! command -v npm >/dev/null 2>&1; then
+      if ts_lsp_works; then
+        :  # a server with a tsserver beside it is already first on PATH
+      elif [ -f "$TS_LSP_TSSERVER" ] && [ ! -e "$TS_LSP_LINK" ]; then
+        mkdir -p "$(dirname "$TS_LSP_LINK")" && ln -sfn "$TS_LSP_BIN" "$TS_LSP_LINK" \
+          && echo "    linked     $TS_LSP_LINK"
+      elif [ -f "$TS_LSP_TSSERVER" ]; then
+        :  # installed and linked; the PATH check below says what is in the way
+      elif ! command -v npm >/dev/null 2>&1; then
         echo "!! typescript-lsp: no npm, so typescript-language-server is not installed." >&2
         echo "   Install npm, then run: $TS_LSP_INSTALL" >&2
-      elif [ ! -f "$TS_LSP_TSSERVER" ]; then
-        if confirm_install typescript-language-server \
+      elif confirm_install typescript-language-server \
              "typescript-lsp needs it, with TypeScript $TS_LSP_TYPESCRIPT_MAJOR beside it, to answer code lookups in TypeScript and JavaScript." \
-             "$TS_LSP_INSTALL && ln -sfn $TS_LSP_DIR/node_modules/.bin/typescript-language-server $TS_LSP_LINK" \
-           && $TS_LSP_INSTALL \
-           && mkdir -p "$(dirname "$TS_LSP_LINK")" \
-           && ln -sfn "$TS_LSP_DIR/node_modules/.bin/typescript-language-server" "$TS_LSP_LINK"; then
-          echo "    installed  $TS_LSP_LINK"
-        else
-          echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
-        fi
+             "$TS_LSP_INSTALL" \
+           && ts_lsp_install; then
+        echo "    installed  $TS_LSP_LINK"
+      else
+        echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
       fi
-      TS_LSP_FOUND="$(command -v typescript-language-server || true)"
-      if [ -f "$TS_LSP_TSSERVER" ] && [ -z "$TS_LSP_FOUND" ]; then
-        echo "!! $(dirname "$TS_LSP_LINK") is not on PATH; add it so typescript-lsp finds its server." >&2
-      elif [ -f "$TS_LSP_TSSERVER" ] && [ "$TS_LSP_FOUND" != "$TS_LSP_LINK" ]; then
-        echo "!! $TS_LSP_FOUND comes before $TS_LSP_LINK on PATH;" >&2
-        echo "   put $(dirname "$TS_LSP_LINK") first, or remove the other copy." >&2
+      if ! ts_lsp_works && [ -f "$TS_LSP_TSSERVER" ]; then
+        TS_LSP_FOUND="$(command -v typescript-language-server || true)"
+        if [ -z "$TS_LSP_FOUND" ]; then
+          echo "!! $(dirname "$TS_LSP_LINK") is not on PATH; add it so typescript-lsp finds its server." >&2
+        else
+          echo "!! $TS_LSP_FOUND comes before $TS_LSP_LINK on PATH and has no TypeScript with a tsserver beside it;" >&2
+          echo "   put $(dirname "$TS_LSP_LINK") first, or remove the other copy." >&2
+        fi
       fi
       ;;
   esac
@@ -719,6 +748,8 @@ PY
       if ! command -v dotnet >/dev/null 2>&1; then
         echo "!! csharp-lsp: no dotnet SDK, so csharp-ls is not installed." >&2
         echo "   Install the .NET SDK, then run: $CS_LSP_INSTALL" >&2
+      elif ! command -v csharp-ls >/dev/null 2>&1 && [ -x "$DOTNET_TOOLS_DIR/csharp-ls" ]; then
+        echo "!! csharp-ls is in $DOTNET_TOOLS_DIR, which is not on PATH; add it there." >&2
       elif ! offer_install csharp-ls \
            "csharp-lsp needs it to answer code lookups in C#." \
            "$CS_LSP_INSTALL"; then

@@ -68,7 +68,10 @@ def marketplace_entry(config: pathlib.Path, market: str, plugin: str) -> dict:
 
 def install_paths(config: pathlib.Path, plugin_id: str) -> list:
     installed = load(config / "plugins" / "installed_plugins.json") or {}
-    records = installed.get("plugins", {}).get(plugin_id, []) if isinstance(installed, dict) else []
+    plugins = installed.get("plugins") if isinstance(installed, dict) else None
+    records = plugins.get(plugin_id) if isinstance(plugins, dict) else None
+    if not isinstance(records, list):
+        return []
     return [pathlib.Path(r["installPath"]) for r in records
             if isinstance(r, dict) and isinstance(r.get("installPath"), str)]
 
@@ -93,8 +96,12 @@ def missing_servers(config: pathlib.Path, workspace: str = "") -> list:
             continue
         plugin, market = plugin_id.split("@", 1)
         paths = install_paths(config, plugin_id)
-        commands = server_commands(marketplace_entry(config, market, plugin).get("lspServers"), config)
+        entry_servers = marketplace_entry(config, market, plugin).get("lspServers")
+        # A path in the catalog entry is relative to the plugin, like one in its manifest.
+        commands = [] if isinstance(entry_servers, str) else server_commands(entry_servers, config)
         for path in paths:
+            if isinstance(entry_servers, str):
+                commands += server_commands(entry_servers, path)
             manifest = load(path / PLUGIN_MANIFEST) or {}
             if isinstance(manifest, dict):
                 commands += server_commands(manifest.get("lspServers"), path)

@@ -188,10 +188,11 @@ try:
         # usage limits saved by the statusline (ADR-0015)
         complete = agent("Goal: x\nFiles: y\nDone: z")
         os.makedirs(os.path.join(config, "usage"))
-        def limits(five, week=10, resets_in=3600):
+        def limits(five, week=10, resets_in=3600, age=0):
             with open(os.path.join(config, "usage", "limits.json"), "w") as f:
                 json.dump({"five_hour": {"used_percentage": five, "resets_at": time.time() + resets_in},
-                           "seven_day": {"used_percentage": week, "resets_at": time.time() + 86400}}, f)
+                           "seven_day": {"used_percentage": week, "resets_at": time.time() + 86400},
+                           "saved_at": time.time() - age}, f)
         limits(50)
         expect("limits low (silent)", A, complete, None)
         limits(80)
@@ -202,6 +203,12 @@ try:
         expect("limit blocks exempt type too", A, agent("find x", "Explore"), "DENY")
         limits(95, resets_in=-60)
         expect("limit already reset (silent)", A, complete, None)
+        limits(89.6)
+        expect("just under the block only warns", A, complete, "Usage is high: 5-hour limit 90% used")
+        limits(74.6)
+        expect("just under the warning (silent)", A, complete, None)
+        limits(95, age=2 * 3600)
+        expect("file not refreshed for hours (silent)", A, complete, None)
         with open(os.path.join(config, "usage", "limits.json"), "w") as f:
             f.write("{not json")
         expect("limits file malformed (silent)", A, complete, None)
@@ -443,6 +450,21 @@ try:
         expect("server named in the plugin's .lsp.json missing", L, start, "`fake-b-server` is not on PATH")
         enable(**{"b-lsp@m": False})
         expect("plugin disabled (silent)", L, start, None)
+
+        # a catalog entry may name a file, relative to the plugin, not to the config folder
+        write(os.path.join(market, ".claude-plugin", "marketplace.json"),
+              {"plugins": [{"name": "b-lsp", "lspServers": "./servers.json"}]})
+        write(os.path.join(cache, "servers.json"), {"c": {"command": "fake-c-server"}})
+        write(os.path.join(cache, ".lsp.json"), {})
+        enable(**{"b-lsp@m": True})
+        expect("catalog entry's server file, relative to the plugin", L, start, "`fake-c-server` is not on PATH")
+        write(os.path.join(cache, "servers.json"), {"c": {"command": "fake-a-server"}})
+        expect("catalog entry's server file, server on PATH (silent)", L, start, None)
+        write(os.path.join(config, "plugins", "installed_plugins.json"), {"plugins": ["not", "a", "dict"]})
+        expect("installed_plugins.json of another shape (silent)", L, start, None)
+        write(os.path.join(config, "plugins", "installed_plugins.json"),
+              {"plugins": {"b-lsp@m": [{"installPath": cache}]}})
+        enable(**{"b-lsp@m": False})
 
         # typescript-language-server also needs tsserver.js beside it, which TypeScript 7 lacks
         write(os.path.join(market, ".claude-plugin", "marketplace.json"),

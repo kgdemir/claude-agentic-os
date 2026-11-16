@@ -16,7 +16,8 @@ can, and saves them to `usage/limits.json` in the config folder. From
 LIMIT_WARN_PERCENT on, the hook adds both numbers and their reset times to the
 model's context. From LIMIT_BLOCK_PERCENT on, it blocks the agent: a subagent
 spends the same limit, and one that hits it mid-task stops with its work half
-done (ADR-0015). A window whose reset time has passed is ignored.
+done (ADR-0015). A window whose reset time has passed, and a file older than
+LIMITS_MAX_AGE_SECONDS, are ignored.
 """
 import datetime
 import json
@@ -39,6 +40,9 @@ LIMITS_FILE = pathlib.Path("usage") / "limits.json"
 LIMIT_WINDOWS = {"five_hour": "5-hour", "seven_day": "weekly"}
 LIMIT_WARN_PERCENT = 75
 LIMIT_BLOCK_PERCENT = 90
+# A file the statusline has not refreshed for this long is from no live session
+# (a headless run, an old login) and is ignored.
+LIMITS_MAX_AGE_SECONDS = 30 * 60
 
 
 def has_field(prompt: str, field: str) -> bool:
@@ -65,6 +69,9 @@ def current_limits(now: float) -> list:
     except (OSError, ValueError) as exc:
         print(f"check-agent-brief: {path}: {exc}", file=sys.stderr)
         return []
+    saved_at = saved.get("saved_at") if isinstance(saved, dict) else None
+    if not isinstance(saved_at, (int, float)) or now - saved_at > LIMITS_MAX_AGE_SECONDS:
+        return []
     found = []
     for key, label in LIMIT_WINDOWS.items():
         window = saved.get(key) if isinstance(saved, dict) else None
@@ -72,13 +79,13 @@ def current_limits(now: float) -> list:
             continue
         used, resets = window.get("used_percentage"), window.get("resets_at")
         if isinstance(used, (int, float)) and isinstance(resets, (int, float)) and resets > now:
-            found.append((label, round(used), resets))
+            found.append((label, used, resets))
     return found
 
 
 def describe(limits: list) -> str:
     return "; ".join(
-        f"{label} limit {used}% used, resets {datetime.datetime.fromtimestamp(resets).strftime('%a %H:%M')}"
+        f"{label} limit {round(used)}% used, resets {datetime.datetime.fromtimestamp(resets).strftime('%a %H:%M')}"
         for label, used, resets in limits)
 
 
