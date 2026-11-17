@@ -107,3 +107,17 @@ it matters, and a warn-only reminder at the moment of the call fixes that withou
   config keys, docs) silent; each warn case needs a no-warn twin.
 - A warn on a valid case (searching an identifier inside comments or docs on purpose) adds
   noise; the reminder is advisory, so the model can proceed and say why.
+
+## Amendment 2026-11-17
+
+- A review of commit `79ebd2f` found four gaps in the hook, each now covered by a test that
+  failed before the fix: a redirect target (`> hits.txt`, `2>/dev/null`) was read as a file
+  argument and could set a `.txt` scope, so the search went silent; a search on a later line
+  of a multi-line command was merged into the first command and missed; `grep -T` was read
+  as taking a value and `rg -r`/`--replace` as not, so the wrong word became the pattern; and
+  an unreadable event left no note on stderr.
+- Razor and HTML: the official `csharp-lsp` plugin maps `.cs` only, and no official plugin
+  covers `.cshtml`, `.razor` or `.html`. A search scoped to those files stays silent, which is
+  right. An unscoped search in an MVC, Razor Pages or Blazor project still warns, and
+  `findReferences` misses uses in views, so the reminder and `lsp.md` now say to grep the view
+  files as well and keep the two result sets apart.

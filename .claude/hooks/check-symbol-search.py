@@ -28,15 +28,20 @@ import sys
 GREP_PROGRAMS = {"grep", "egrep", "fgrep"}
 SEARCH_PROGRAMS = GREP_PROGRAMS | {"rg"}
 RECURSIVE_OPTIONS = {"--recursive", "--dereference-recursive"}
-# Shell words that end one simple command and start the next.
-COMMAND_BREAKS = {"|", "||", "&&", ";", "&", "(", ")", "\n"}
+# Shell operator characters. A run of them is one word: it ends a simple command
+# (`|`, `&&`, `;`, a new line), or redirects (`>`, `2>&1`, `<<`) and is
+# followed by its target, which is not a search argument.
+OPERATOR_CHARS = "();<>|&\n"
+REDIRECT_CHARS = "<>"
 IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 # Shorter names are mostly keywords or loop variables, and noise as a reminder.
 MIN_IDENTIFIER_LENGTH = 3
 WORD_EDGES = ("\\b", "\\<", "\\>")
 
-# Options whose value is the next word (grep, rg and git grep).
-VALUE_OPTIONS = {"-e", "-f", "-m", "-A", "-B", "-C", "-t", "-T", "-g", "-d", "-D", "-j",
+# Options whose value is the next word (grep, rg and git grep), and those only
+# rg gives a value (`grep -T` is --initial-tab, `grep -r` is --recursive).
+RG_VALUE_OPTIONS = {"-T", "-r", "--replace"}
+VALUE_OPTIONS = {"-e", "-f", "-m", "-A", "-B", "-C", "-t", "-g", "-d", "-D", "-j",
                  "--regexp", "--file", "--max-count", "--context", "--before-context",
                  "--after-context", "--type", "--type-not", "--glob", "--iglob", "--include",
                  "--exclude", "--exclude-dir", "--max-depth", "--threads"}
@@ -88,18 +93,26 @@ def path_extension(path: str) -> set:
 def simple_commands(command: str) -> list:
     """(words, reads a pipe) for each simple command in a shell line; [] when it
     cannot be split."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=OPERATOR_CHARS)
+    lexer.whitespace = " \t\r"  # a new line ends a command, so it is an operator here
     lexer.whitespace_split = True
     try:
         words = list(lexer)
     except ValueError:
         return []
-    commands, current, piped = [], [], False
+    commands, current, piped, redirect_target = [], [], False, False
     for word in words:
-        if word in COMMAND_BREAKS:
+        operator = set(word) <= set(OPERATOR_CHARS)
+        if redirect_target and not operator:
+            redirect_target = False
+        elif operator and any(ch in word for ch in REDIRECT_CHARS):
+            if current and current[-1].isdigit():  # the 2 of 2>/dev/null
+                current.pop()
+            redirect_target = True
+        elif operator:
             if current:
                 commands.append((current, piped))
-            current, piped = [], word == "|"
+            current, piped, redirect_target = [], "|" in word and "||" not in word, False
         else:
             current.append(word)
     if current:
@@ -125,10 +138,11 @@ def recursive(args: list) -> bool:
     return any(a in RECURSIVE_OPTIONS or re.fullmatch(r"-[A-Za-z]*[rR][A-Za-z]*", a) for a in args)
 
 
-def parse_search(args: list):
+def parse_search(program: str, args: list):
     """(patterns, scope extensions or None for no scope, folders searched, whether
     any file or folder was named)."""
     patterns, extensions, folders, positional = [], set(), [], []
+    value_options = VALUE_OPTIONS | (RG_VALUE_OPTIONS if program == "rg" else set())
     scoped = False
     i = 0
     while i < len(args):
@@ -139,7 +153,7 @@ def parse_search(args: list):
             break
         if word.startswith("--") and has_value:
             option = name
-        elif word in VALUE_OPTIONS and i + 1 < len(args):
+        elif word in value_options and i + 1 < len(args):
             option, value = word, args[i + 1]
             i += 1
         else:
@@ -205,7 +219,7 @@ def searches(event: dict) -> list:
             if search is None:
                 continue
             program, args = search
-            patterns, extensions, folders, named = parse_search(args)
+            patterns, extensions, folders, named = parse_search(program, args)
             # With no file named, grep (unless recursive) and a piped search read
             # their input, not the code: `ps aux | grep python`.
             if not named and (piped or (program in GREP_PROGRAMS and not recursive(args))):
@@ -263,7 +277,9 @@ def reminder(event: object) -> str:
             return (f"`{name}` looks like a code symbol, and a language server is running for these "
                     "files. Use the `LSP` tool (`workspaceSymbol`, then `findReferences` or "
                     "`goToDefinition`); grep only matches text, so it hits comments and strings and "
-                    "misses aliased imports and calls through an interface. If this is a text search "
+                    "misses aliased imports and calls through an interface. Uses in files the server "
+                    "does not read (Razor `.cshtml`/`.razor` views, HTML templates) still need grep on "
+                    "those files. If this is a text search "
                     f"on purpose (a log line, a config key), go on and say so ({GUIDE}).")
     return ""
 
@@ -271,7 +287,8 @@ def reminder(event: object) -> str:
 def main() -> int:
     try:
         event = json.load(sys.stdin)
-    except ValueError:
+    except ValueError as exc:
+        print(f"check-symbol-search: unreadable event: {exc}", file=sys.stderr)
         return 0
     try:
         note = reminder(event)

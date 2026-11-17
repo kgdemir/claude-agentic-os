@@ -19,6 +19,14 @@ classes, interfaces, variables, types.
 - **grep stays right for text that is not a code symbol:** docs, config keys, log lines, error
   messages, string literals, file names, and languages with no language server.
   *Why: a language server only knows symbols; for plain text, grep is the faster and complete tool.*
+- **Templates the server does not read still need grep.** `csharp-ls` reads `.cs` only, and no
+  official plugin covers Razor (`.cshtml`, `.razor`) or HTML, so `findReferences` on a C# model
+  property, action or view component misses its uses in views, tag helpers and `asp-*`
+  attributes. For a rename or delete in an MVC, Razor Pages or Blazor project, take the
+  `LSP` results for `.cs` and add a grep over the view files, and say which part came from which.
+  The `check-symbol-search.py` hook stays silent on a search scoped to those files.
+  *Why: a reference list from the server reads as complete, and the view that still names the
+  old property fails only at runtime.*
 - **Check that a server can start before the first lookup.** A plugin alone is not enough: it
   only names a server program (the `command` in its `lspServers`), which must be on `PATH`
   (`command -v <command>`). The `check-lsp-servers.py` hook warns at session start when one is
