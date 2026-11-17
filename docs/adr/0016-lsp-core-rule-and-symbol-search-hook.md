@@ -33,7 +33,7 @@ it matters, and a warn-only reminder at the moment of the call fixes that withou
    `goToImplementation`. grep stays right for text that is not a symbol. Details, server
    checks and fallbacks: `~/.claude/guides/tools/lsp.md`." with the cost above.
    `lsp.md` stays the detailed guide; its trigger row stays in the add-on table.
-2. **Warn-only hook.** A small sibling, `.claude/hooks/check-symbol-search.py`, registered
+2. **Warn-only hook** (commit `79ebd2f`). A small sibling, `.claude/hooks/check-symbol-search.py`, registered
    as `PreToolUse` on `Bash|Grep`, not an extension of `check-bash-command.py` (ADR-0009):
    that hook is about core-rule breaks in shell commands, and this one needs the plugin
    files and the `Grep` tool too. It returns a reminder as `additionalContext` and never
