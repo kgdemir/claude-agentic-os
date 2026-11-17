@@ -15,7 +15,7 @@ no details.
 
 It is an installer, so read it before you run it. In full it can:
 
-- write Markdown rules, templates, four hook scripts and a statusline into
+- write Markdown rules, templates, five hook scripts and a statusline into
   `~/.claude/`, backing up every file whose content it changes as
   `<name>.backup-<timestamp>`;
 - merge keys into `~/.claude/settings.json`, never overwrite the file;
@@ -47,11 +47,15 @@ It is an installer, so read it before you run it. In full it can:
 reduces it to writing Markdown and the hook scripts into `~/.claude/` and
 registering the hooks in `settings.json`.
 
-The hooks never block a command or use the network. The Agent and Bash hooks
-only add a reminder. The usage-log hook appends one line per memory, guide,
+The hooks never use the network, and only one ever blocks: the Agent hook
+stops a new subagent when the 5-hour or weekly usage limit the statusline saved
+in `~/.claude/usage/limits.json` is near (ADR-0015). Otherwise the Agent and Bash
+hooks only add a reminder. The usage-log hook appends one line per memory, guide,
 skill or agent use to logs under `~/.claude/usage/` and each project's memory
 folder (ADR-0012). The LSP hook reads plugin files at session start and only
-warns (ADR-0013). The Bash
+warns (ADR-0013). The symbol-search hook reads the same plugin files and, for
+a search with no file scope, runs `git ls-files` in the session's folder with a
+2-second limit; it only adds a reminder (ADR-0016). The Bash
 hook runs `git diff --cached` (and `git diff` for `git commit -a`) in the
 folder the commit runs in (after any `cd` or `git -C`), with a 5-second limit, to look for secret-shaped text. A
 match is reported by file and kind only; the value is never printed, logged or

@@ -72,7 +72,7 @@ holding them.
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
 | **Statusline** | model, effort, context remaining, session cost, burn rate, git branch with +/− counts |
 | **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
-| **Hooks** (never block) | remind Claude: subagent briefs without `Goal:`/`Files:`/`Done:`, and shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff); log memory, guide, skill and agent use, to find what is worth grouping or turning off (ADR-0012) |
+| **Hooks** (warn; one blocks near a usage limit) | remind Claude: subagent briefs without `Goal:`/`Files:`/`Done:`, shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff), language servers that cannot start, and text searches for a code symbol that the `LSP` tool should answer (ADR-0016); stop a new subagent near the 5-hour or weekly limit (ADR-0015); log memory, guide, skill and agent use, to find what is worth grouping or turning off (ADR-0012) |
 | **Launcher** (optional) | `runclaude <project>` — installs missing tooling, prepares the venv, fast-forwards a clean default branch, opens Claude |
 
 ## Install
@@ -199,11 +199,12 @@ only when `settings.json` does not already carry them:
 ~/.claude/bin/
   runclaude                      optional launcher (only with --with-launcher)
 ~/.claude/hooks/
-  check-agent-brief.py           PreToolUse hook on the Agent tool: warns (never
-                                 blocks) on a subagent brief without
-                                 Goal:/Files:/Done: lines
-                                 (Explore, claude-code-guide, statusline-setup
-                                 and forks exempt); needs python3
+  check-agent-brief.py           PreToolUse hook on the Agent tool: warns on a
+                                 subagent brief without Goal:/Files:/Done:
+                                 lines (Explore, claude-code-guide,
+                                 statusline-setup and forks exempt); blocks a
+                                 new agent near the 5-hour or weekly limit the
+                                 statusline saves; needs python3
   check-bash-command.py          PreToolUse hook on Bash: warns (never blocks)
                                  when a command breaks a core rule; on
                                  git commit it scans the staged diff and names
@@ -215,6 +216,10 @@ only when `settings.json` does not already carry them:
                                  --report memory|guides|plugins totals them
   check-lsp-servers.py           SessionStart hook: warns when an enabled LSP
                                  plugin's language server is not on PATH
+  check-symbol-search.py         PreToolUse hook on Bash and Grep: warns (never
+                                 blocks) when grep, rg, git grep or the Grep
+                                 tool searches for one code identifier in
+                                 files whose language server can start
 ~/.claude/skills/security-audit/ the security-audit skill (only with --with-security-audit)
 ~/.claude/skill-backups/         earlier copies of that skill, as .tar.backup-<timestamp>
 ~/.claude/statusline.sh          statusline for this OS (only with --with-statusline)

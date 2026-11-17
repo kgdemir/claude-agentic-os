@@ -1,7 +1,7 @@
 # ADR-0016: A core LSP rule, and a warn-only hook for text searches on code symbols
 
 **Date**: 2026-11-17
-**Status**: proposed
+**Status**: accepted
 **Deciders**: Kerim Gökhan DEMİR
 
 ## Context
@@ -33,24 +33,37 @@ it matters, and a warn-only reminder at the moment of the call fixes that withou
    `goToImplementation`. grep stays right for text that is not a symbol. Details, server
    checks and fallbacks: `~/.claude/guides/tools/lsp.md`." with the cost above.
    `lsp.md` stays the detailed guide; its trigger row stays in the add-on table.
-2. **Warn-only hook.** Extend `.claude/hooks/check-bash-command.py` (ADR-0009) and register
-   it, or a small sibling, as `PreToolUse` on `Grep` too. It returns a reminder as
-   `additionalContext` and never blocks when **all** of these hold:
-   - the call is a text search: `grep`/`rg`/`git grep` in a Bash command, or the `Grep` tool;
+2. **Warn-only hook.** A small sibling, `.claude/hooks/check-symbol-search.py`, registered
+   as `PreToolUse` on `Bash|Grep`, not an extension of `check-bash-command.py` (ADR-0009):
+   that hook is about core-rule breaks in shell commands, and this one needs the plugin
+   files and the `Grep` tool too. It returns a reminder as `additionalContext` and never
+   blocks when **all** of these hold:
+   - the call is a text search: `grep`, `egrep`, `fgrep`, `rg` or `git grep` in any simple
+     command of a Bash line (after `&&`, `;`, `|`), or the `Grep` tool;
    - the pattern is a single identifier (`^[A-Za-z_$][A-Za-z0-9_$]*$`, optionally wrapped in
-     `\b`), not a phrase, a regex with spaces, a CSS selector (`.foo`, `foo-bar`) or a path;
-   - the search is scoped to source files of a language with a configured server (an
-     `--include`/`-t`/`glob` or file arguments ending in `.ts`, `.tsx`, `.js`, `.jsx`,
-     `.cs`, `.py`, …), or the repository has such sources and no scope is given;
-   - the server for that language is on `PATH` (the same check as
-     `check-lsp-servers.py`, ADR-0013); without a server the hook stays silent, because
-     `lsp.md` already says to fall back to grep and say so.
-   The reminder: "`<pattern>` looks like a code symbol. Use the `LSP` tool
-   (`workspaceSymbol`, then `findReferences` / `goToDefinition`); grep only matches text.
-   (agent-working-rules §2, lsp.md)". Any unexpected input or internal error lets the call
-   through with a note on stderr, as in ADR-0009.
+     `\b`, `\<`, `\>`) of at least 3 characters, not a phrase, a regex with spaces, a CSS
+     selector (`.foo`, `foo-bar`) or a path; shorter names are mostly keywords and loop
+     variables;
+   - the search reads files, not its input: a piped search, or a `grep` with no file and no
+     `-r`, reads stdin (`ps aux | grep python`) and stays silent;
+   - the search is scoped to files a running server covers (`--include`, `-g`/`--glob`,
+     `-t`/`--type`, file or glob arguments, the `Grep` tool's `glob`, `type` or file
+     `path`), or it has no scope and `git ls-files` in that folder (2-second limit) lists
+     such a file; outside a git repository an unscoped search stays silent;
+   - the server can start. The extensions each server covers come from its plugin's
+     `extensionToLanguage`, read by `check-lsp-servers.py`'s `server_states()` (ADR-0013),
+     which the new hook loads, so both hooks agree on what "can start" means. Without a
+     server the hook stays silent, because `lsp.md` already says to fall back to grep and
+     say so.
+   The reminder: "`<pattern>` looks like a code symbol, and a language server is running
+   for these files. Use the `LSP` tool (`workspaceSymbol`, then `findReferences` or
+   `goToDefinition`); grep only matches text, … If this is a text search on purpose (a log
+   line, a config key), go on and say so (lsp.md)". Unreadable JSON or an internal error
+   lets the call through with a note on stderr, as in ADR-0009.
 3. **Tests.** Every warn case in `tools/test-hooks.sh` gets a silent twin: identifier vs
-   CSS class, `.tsx` scope vs `.css`/`.md` scope, server present vs missing.
+   kebab-case name, CSS class, short name and phrase; `.tsx` scope vs `.css`/`.md` scope;
+   `rg -t ts` vs `-t css`; a git repository vs a plain folder; a file search vs a piped or
+   stdin search; server on `PATH` vs not. Each check was removed once to see its tests fail.
 
 ## Alternatives Considered
 

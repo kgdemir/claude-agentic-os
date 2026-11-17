@@ -491,6 +491,75 @@ finally:
     else:
         os.environ["CLAUDE_CONFIG_DIR"] = old_config
 
+# Symbol search hook (PreToolUse on Bash and Grep): a text search for one identifier in
+# files whose language server can start gets a reminder to use the LSP tool (ADR-0016)
+S = "check-symbol-search.py"
+SYMBOL = "looks like a code symbol"
+try:
+    with tempfile.TemporaryDirectory() as home:
+        config = os.path.join(home, ".claude")
+        market = os.path.join(home, "market")
+        tools_bin = os.path.join(home, "bin")
+        repo = os.path.join(home, "repo")
+        plain = os.path.join(home, "plain")
+        for d in (os.path.join(market, ".claude-plugin"), os.path.join(config, "plugins"),
+                  tools_bin, os.path.join(repo, "src"), plain):
+            os.makedirs(d)
+        os.environ["CLAUDE_CONFIG_DIR"] = config
+        def write(path, data):
+            with open(path, "w") as fh:
+                json.dump(data, fh)
+        write(os.path.join(config, "settings.json"), {"enabledPlugins": {"s-lsp@m": True}})
+        write(os.path.join(config, "plugins", "known_marketplaces.json"), {"m": {"installLocation": market}})
+        write(os.path.join(market, ".claude-plugin", "marketplace.json"),
+              {"plugins": [{"name": "s-lsp", "lspServers": {"s": {
+                  "command": "fake-sym-server",
+                  "extensionToLanguage": {".ts": "typescript", ".tsx": "typescriptreact"}}}}]})
+        server = os.path.join(tools_bin, "fake-sym-server")
+        open(server, "w").close()
+        os.chmod(server, 0o755)
+        os.environ["PATH"] = tools_bin + os.pathsep + old_path
+        open(os.path.join(repo, "src", "App.tsx"), "w").close()
+        open(os.path.join(plain, "App.tsx"), "w").close()
+        subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", repo], check=True)
+        subprocess.run(["git", "-C", repo, "add", "src/App.tsx"], check=True)
+        def grep_tool(cwd="", **tool_input):
+            return {"tool_name": "Grep", "tool_input": tool_input, "cwd": cwd}
+
+        expect("identifier, --include *.tsx", S, bash("grep -rn handleClick --include='*.tsx' ."), SYMBOL)
+        expect("kebab-case name, --include *.tsx (silent)", S, bash("grep -rn btn-primary --include='*.tsx' ."), None)
+        expect("CSS class, --include *.tsx (silent)", S, bash("grep -rn '.btn' --include='*.tsx' ."), None)
+        expect("short name, --include *.tsx (silent)", S, bash("grep -rn id --include='*.tsx' ."), None)
+        expect("identifier, --include *.css (silent)", S, bash("grep -rn handleClick --include='*.css' ."), None)
+        expect("identifier in \\b, a .tsx file", S, bash("grep -n '\\bhandleClick\\b' src/App.tsx"), SYMBOL)
+        expect("identifier, a .md file (silent)", S, bash("grep -n handleClick README.md"), None)
+        expect("after cd, a .tsx file", S, bash("cd src && grep -n handleClick App.tsx"), SYMBOL)
+        expect("grep only as an echo argument (silent)", S, bash("echo grep handleClick App.tsx"), None)
+        expect("Grep tool, glob *.tsx", S, grep_tool(pattern="handleClick", glob="*.tsx"), SYMBOL)
+        expect("Grep tool, a phrase (silent)", S, grep_tool(pattern="handle click", glob="*.tsx"), None)
+        expect("Grep tool, glob *.md (silent)", S, grep_tool(pattern="handleClick", glob="*.md"), None)
+        expect("rg -t ts", S, bash("rg -t ts handleClick"), SYMBOL)
+        expect("rg -t css (silent)", S, bash("rg -t css handleClick"), None)
+        expect("git grep -- *.tsx", S, bash("git grep -n handleClick -- '*.tsx'"), SYMBOL)
+        expect("git grep -- *.md (silent)", S, bash("git grep -n handleClick -- '*.md'"), None)
+        expect("no scope, git repo with .tsx files", S, bash("rg handleClick", cwd=repo), SYMBOL)
+        expect("no scope, folder outside git (silent)", S, bash("rg handleClick", cwd=plain), None)
+        expect("Grep tool, no scope, git repo", S, grep_tool(repo, pattern="handleClick"), SYMBOL)
+        expect("Grep tool, no scope, outside git (silent)", S, grep_tool(plain, pattern="handleClick"), None)
+        expect("grep -r, no scope, git repo", S, bash("grep -r handleClick", cwd=repo), SYMBOL)
+        expect("grep reading stdin (silent)", S, bash("grep handleClick", cwd=repo), None)
+        expect("piped grep (silent)", S, bash("ps aux | grep -r handleClick", cwd=repo), None)
+        expect("piped rg (silent)", S, bash("cat log | rg handleClick", cwd=repo), None)
+        os.environ["PATH"] = old_path
+        expect("server not on PATH (silent)", S, bash("rg -t ts handleClick"), None)
+        expect("unparsable command (silent)", S, bash("grep 'handleClick"), None)
+finally:
+    os.environ["PATH"] = old_path
+    if old_config is None:
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    else:
+        os.environ["CLAUDE_CONFIG_DIR"] = old_config
+
 
 if failures:
     print("\n".join(failures))

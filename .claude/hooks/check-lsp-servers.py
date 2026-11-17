@@ -43,14 +43,20 @@ def load(path: pathlib.Path):
         return None
 
 
-def server_commands(servers, base: pathlib.Path) -> list:
-    """Commands named in an `lspServers` value: an object, or a path to a JSON file."""
+def server_entries(servers, base: pathlib.Path) -> list:
+    """(command, file extensions) for each server in an `lspServers` value: an
+    object, or a path to a JSON file."""
     if isinstance(servers, str):
         servers = load(base / servers)
     if not isinstance(servers, dict):
         return []
-    return [s["command"] for s in servers.values()
-            if isinstance(s, dict) and isinstance(s.get("command"), str)]
+    entries = []
+    for server in servers.values():
+        if isinstance(server, dict) and isinstance(server.get("command"), str):
+            languages = server.get("extensionToLanguage")
+            extensions = frozenset(languages) if isinstance(languages, dict) else frozenset()
+            entries.append((server["command"], extensions))
+    return entries
 
 
 def marketplace_entry(config: pathlib.Path, market: str, plugin: str) -> dict:
@@ -84,13 +90,15 @@ def finds_beside(program: str, needed: pathlib.Path, workspace: str) -> bool:
     return any((folder / needed).is_file() for folder in real.parents)
 
 
-def missing_servers(config: pathlib.Path, workspace: str = "") -> list:
-    """(plugin id, command, problem, readme or None) for each server that cannot start."""
+def server_states(config: pathlib.Path, workspace: str = "") -> list:
+    """(plugin id, command, file extensions, problem or None, readme or None) for
+    each language server an enabled plugin names; problem is None when it can start.
+    check-symbol-search.py reads this too."""
     settings = load(config / "settings.json") or {}
     enabled = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else {}
     if not isinstance(enabled, dict):
         return []
-    missing = []
+    states = []
     for plugin_id, on in sorted(enabled.items()):
         if on is not True or "@" not in plugin_id:
             continue
@@ -98,26 +106,36 @@ def missing_servers(config: pathlib.Path, workspace: str = "") -> list:
         paths = install_paths(config, plugin_id)
         entry_servers = marketplace_entry(config, market, plugin).get("lspServers")
         # A path in the catalog entry is relative to the plugin, like one in its manifest.
-        commands = [] if isinstance(entry_servers, str) else server_commands(entry_servers, config)
+        entries = [] if isinstance(entry_servers, str) else server_entries(entry_servers, config)
         for path in paths:
             if isinstance(entry_servers, str):
-                commands += server_commands(entry_servers, path)
+                entries += server_entries(entry_servers, path)
             manifest = load(path / PLUGIN_MANIFEST) or {}
             if isinstance(manifest, dict):
-                commands += server_commands(manifest.get("lspServers"), path)
-            commands += server_commands(load(path / LSP_FILE), path)
+                entries += server_entries(manifest.get("lspServers"), path)
+            entries += server_entries(load(path / LSP_FILE), path)
         readme = next((p / "README.md" for p in paths if (p / "README.md").is_file()), None)
-        for command in dict.fromkeys(commands):
+        extensions = {}
+        for command, found in entries:
+            extensions[command] = extensions.get(command, frozenset()) | found
+        for command, served in extensions.items():
             program = shutil.which(command)
             needed = NEEDS_BESIDE.get(command)
+            problem = None
             if program is None:
-                missing.append((plugin_id, command, "is not on PATH", readme))
+                problem = "is not on PATH"
             elif needed and not finds_beside(program, needed, workspace):
-                missing.append((plugin_id, command,
-                                f"at {os.path.realpath(program)} has no `{needed.relative_to('node_modules')}` "
-                                "beside it (TypeScript 7 ships none; install TypeScript 6 next to the server)",
-                                readme))
-    return missing
+                problem = (f"at {os.path.realpath(program)} has no `{needed.relative_to('node_modules')}` "
+                           "beside it (TypeScript 7 ships none; install TypeScript 6 next to the server)")
+            states.append((plugin_id, command, served, problem, readme))
+    return states
+
+
+def missing_servers(config: pathlib.Path, workspace: str = "") -> list:
+    """(plugin id, command, problem, readme or None) for each server that cannot start."""
+    return [(plugin_id, command, problem, readme)
+            for plugin_id, command, _, problem, readme in server_states(config, workspace)
+            if problem is not None]
 
 
 def main() -> int:

@@ -1079,6 +1079,11 @@ fi
 #                          agent use to append-only logs, to find what is
 #                          rarely used and worth grouping or turning off
 #                          (ADR-0012)
+#   check-lsp-servers.py   SessionStart: an enabled LSP plugin whose language
+#                          server is not on PATH or cannot start (ADR-0013)
+#   check-symbol-search.py a grep, rg, git grep or Grep search for one code
+#                          identifier in files whose language server can
+#                          start; points to the LSP tool (ADR-0016)
 # Each registered command is recorded next to its script, so a re-run (even
 # from another path) replaces exactly the entry it wrote before and never
 # touches a hook of yours that happens to share a name.
@@ -1170,6 +1175,7 @@ if command -v python3 >/dev/null 2>&1; then
   install_hook log-usage.py 'Read|Skill|Agent|Task' 'usage log' PostToolUse
   install_hook log-usage.py '' 'usage log (slash commands)' UserPromptSubmit
   install_hook check-lsp-servers.py '' 'LSP server check' SessionStart
+  install_hook check-symbol-search.py 'Bash|Grep' 'symbol search hook'
 else
   echo "!! python3 not found; skipping the hooks" >&2
 fi

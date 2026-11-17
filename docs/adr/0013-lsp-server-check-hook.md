@@ -92,3 +92,10 @@ Introduced in commit `f26d4cd`.
   the server's real file.
 - Alternative rejected: pin the whole project to TypeScript 6. It holds back
   the compiler for a tool that only reads code.
+
+## Amendment 2026-11-17
+
+- The hook now also reads each server's `extensionToLanguage`, and
+  `server_states()` returns every server with the file extensions it covers and
+  whether it can start. `check-symbol-search.py` (ADR-0016) loads that function,
+  so both hooks use one definition of a server that can start.

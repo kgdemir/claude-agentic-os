@@ -14,15 +14,16 @@ per-person placeholders and installs them into `~/.claude`.
   `.claude/hooks/check-agent-brief.py` (ADR-0006),
   `.claude/hooks/check-bash-command.py` (ADR-0009),
   `.claude/hooks/log-usage.py` (ADR-0012),
-  `.claude/hooks/check-lsp-servers.py` (ADR-0013), `.claude/bin/runclaude`,
+  `.claude/hooks/check-lsp-servers.py` (ADR-0013),
+  `.claude/hooks/check-symbol-search.py` (ADR-0016), `.claude/bin/runclaude`,
   `.claude/statusline-{linux,macos}.sh`.
 - `install.sh` — Bash; detection, substitution, plugins, statusline, settings merge,
   hook registration, auth. Inline Python for JSON edits.
 
 ## Commands
 - `tools/check.sh` — every gate below plus a trial install; CI runs it too.
-- `tools/test-hooks.sh` — sample events through all four hooks, plus the
-  usage reports (ADR-0009, ADR-0012).
+- `tools/test-hooks.sh` — sample events through all five hooks, plus the
+  usage reports (ADR-0009, ADR-0012, ADR-0016).
 - `tools/check-guides.sh` — guide structure: reason lines (baseline
   `tools/check-guides.baseline`), paths, trigger rows, YAML, leak names from the
   gitignored `tools/leak-names.local`.
