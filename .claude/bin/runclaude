@@ -21,6 +21,7 @@ set -e
 #   runclaude <folder>              <folder>, new session
 #   runclaude <session-id>          current directory, resume session
 #   runclaude <folder> <session-id> / runclaude <session-id> <folder>
+#   runclaude --lsp [...]           ask again about LSP setups declined before
 # An argument that is an existing directory is the folder; anything else is the
 # session id passed to `claude --resume`. An argument that looks like a path
 # (contains "/" or starts with ".") but is not a directory is an error.
@@ -30,10 +31,21 @@ DEFAULT_PROJECT_DIR="$PWD"
 CLAUDE_ROOT="${CLAUDE_ROOT:-$HOME/claude}"
 
 usage() {
-  echo "usage: runclaude [folder] [session-id]   (either order)" >&2
+  echo "usage: runclaude [--lsp] [folder] [session-id]   (either order)" >&2
   exit 2
 }
 
+# --lsp may come anywhere; it is taken out before the folder and session id.
+LSP_REASK=""
+REST_ARGS=()
+for ARG in "$@"; do
+  if [ "$ARG" = "--lsp" ]; then
+    LSP_REASK=yes
+  else
+    REST_ARGS+=("$ARG")
+  fi
+done
+set -- ${REST_ARGS[@]+"${REST_ARGS[@]}"}
 [ $# -le 2 ] || usage
 
 PROJECT_DIR=""
@@ -519,7 +531,29 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 # -----------------------------
-# 10. Start Claude
+# 10. LSP plugins and servers for this project
+# -----------------------------
+# Finds the languages the project uses and offers the matching LSP plugin and
+# language server when one is missing (ADR-0018). A "no" is saved per project
+# and language in ~/.claude/lsp-declined.json; `runclaude --lsp` asks again.
+# The helper sits beside the launcher's real file: ~/.claude/bin after an
+# install, or the pack checkout when runclaude is a symlink into it.
+if command -v python3 >/dev/null 2>&1; then
+  LSP_SETUP="$(python3 -I -c 'import os, sys; print(os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])), "lsp-setup"))' "${BASH_SOURCE[0]}")"
+else
+  LSP_SETUP=""
+fi
+if [ -n "$LSP_SETUP" ] && [ -x "$LSP_SETUP" ]; then
+  LSP_ARGS=(ensure --detect "$PROJECT_DIR" --remember-declines)
+  [ -n "$LSP_REASK" ] && LSP_ARGS+=(--reask)
+  python3 -I "$LSP_SETUP" "${LSP_ARGS[@]}" || echo "==> Some LSP setups are not done; code lookups there fall back to grep"
+  hash -r
+else
+  echo "!! lsp-setup not found beside runclaude; LSP plugins and servers not checked" >&2
+fi
+
+# -----------------------------
+# 11. Start Claude
 # -----------------------------
 if command -v claude >/dev/null 2>&1; then
   if [ -n "$SESSION_ID" ]; then

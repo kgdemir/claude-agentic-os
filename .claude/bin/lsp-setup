@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Find the languages a project uses and set up the LSP plugin and server for each.
+
+An LSP plugin only names its language server; the program is installed on its own,
+and without it the `LSP` tool cannot start (guides/core/lsp.md). install.sh calls this
+for the default languages plus the ones found under the projects root; runclaude calls
+it for the project it opens (ADR-0018).
+
+  lsp-setup detect <dir>...
+      Print the languages found in each folder, one per line.
+  lsp-setup ensure [--lang L]... [--detect DIR]... [--answer ask|yes|no]
+                   [--remember-declines] [--reask]
+      For each language, install its plugin and its server when missing. A plugin
+      that is installed but disabled was turned off on purpose: that language is
+      left alone. --answer ask asks once per language on a terminal; yes installs; no
+      only prints the commands. With --remember-declines a "no" for a --detect folder
+      is saved and not asked again; --reask forgets the saved answers for those folders.
+
+Standard library only; run it with `python3 -I`.
+"""
+
+import argparse
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import time
+
+MARKETPLACE = "claude-plugins-official"
+HOME = pathlib.Path.home()
+CLAUDE_DIR = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR") or HOME / ".claude")
+DECLINES_FILE = CLAUDE_DIR / "lsp-declined.json"
+LOCAL_BIN = HOME / ".local" / "bin"
+DOTNET_TOOLS = HOME / ".dotnet" / "tools"
+
+# Folders below a project that never decide its language: dependencies, build
+# output, virtual environments. Hidden folders are skipped as well.
+SKIP_DIRS = {"node_modules", "bin", "obj", "dist", "build", "out", "target", "vendor",
+             "venv", "env", "__pycache__", "site-packages", "coverage"}
+# Marker files sit at the root or up to two folders down (services/api/pyproject.toml);
+# deeper hits are mostly samples and fixtures.
+MAX_DEPTH = 2
+
+# typescript-language-server drives TypeScript's tsserver, which TypeScript 7 (the
+# native port) no longer ships, so the server gets its own folder with TypeScript 6
+# beside it, linked into ~/.local/bin; a global tsc of any version is left alone.
+TS_SERVER_MAJOR = "6"
+TS_TYPESCRIPT_MAJOR = "6"
+TS_TSSERVER_REL = pathlib.Path("node_modules") / "typescript" / "lib" / "tsserver.js"
+PYRIGHT_MAJOR = "1"
+# Seconds a server may take to print its version before it counts as not working.
+VERSION_TIMEOUT = 30
+
+LANGS = {
+    "typescript": {
+        "plugin": "typescript-lsp",
+        "server": "typescript-language-server",
+        "names": {"tsconfig.json", "jsconfig.json", "package.json"},
+        "suffixes": set(),
+        "needs": "npm",
+        "folder": HOME / ".local" / "share" / "ts-lsp",
+        "packages": [f"typescript-language-server@{TS_SERVER_MAJOR}",
+                     f"typescript@{TS_TYPESCRIPT_MAJOR}"],
+        "beside": TS_TSSERVER_REL,
+    },
+    "csharp": {
+        "plugin": "csharp-lsp",
+        "server": "csharp-ls",
+        "names": set(),
+        "suffixes": {".csproj", ".sln", ".slnx"},
+        "needs": "dotnet",
+        "install": ["dotnet", "tool", "install", "--global", "csharp-ls"],
+        "bin_dir": DOTNET_TOOLS,
+    },
+    "python": {
+        "plugin": "pyright-lsp",
+        "server": "pyright-langserver",
+        "names": {"pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"},
+        "prefixes": {"requirements"},
+        "suffixes": set(),
+        "needs": "npm",
+        "folder": HOME / ".local" / "share" / "pyright-lsp",
+        "packages": [f"pyright@{PYRIGHT_MAJOR}"],
+    },
+    "go": {
+        "plugin": "gopls-lsp",
+        "server": "gopls",
+        "names": {"go.mod"},
+        "suffixes": set(),
+        "needs": "go",
+        "install": ["go", "install", "golang.org/x/tools/gopls@latest"],
+        "bin_dir": HOME / "go" / "bin",
+    },
+    "rust": {
+        "plugin": "rust-analyzer-lsp",
+        "server": "rust-analyzer",
+        "names": {"Cargo.toml"},
+        "suffixes": set(),
+        "needs": "rustup",
+        "install": ["rustup", "component", "add", "rust-analyzer"],
+        "bin_dir": HOME / ".cargo" / "bin",
+        # rustup puts a rust-analyzer proxy on PATH that fails until the component is in.
+        "runs": ["--version"],
+    },
+}
+
+
+def say(text):
+    print(text, flush=True)
+
+
+def warn(text):
+    print(f"!! {text}", file=sys.stderr, flush=True)
+
+
+# ------------------------------------------------------------------ detection
+
+def marks(lang, name):
+    spec = LANGS[lang]
+    if name in spec["names"] or pathlib.PurePath(name).suffix in spec["suffixes"]:
+        return True
+    return any(name.startswith(p) and name.endswith(".txt") for p in spec.get("prefixes", ()))
+
+
+def detect(folder):
+    """Languages whose marker files appear in folder or up to MAX_DEPTH folders below it."""
+    found = set()
+    root = pathlib.Path(folder)
+    for current, dirs, files in os.walk(root):
+        depth = len(pathlib.Path(current).relative_to(root).parts)
+        dirs[:] = [] if depth >= MAX_DEPTH else [
+            d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS]
+        for name in files:
+            found.update(lang for lang in LANGS if marks(lang, name))
+        if len(found) == len(LANGS):
+            break
+    return [lang for lang in LANGS if lang in found]
+
+
+# ------------------------------------------------------------------ state
+
+def load_json(path, default):
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return default
+    except (OSError, ValueError) as exc:
+        warn(f"{path}: {exc}; treated as empty")
+        return default
+
+
+def plugin_id(lang):
+    return f"{LANGS[lang]['plugin']}@{MARKETPLACE}"
+
+
+def plugin_state(lang):
+    """'enabled', 'disabled' (installed, not enabled) or 'missing'."""
+    pid = plugin_id(lang)
+    installed = load_json(CLAUDE_DIR / "plugins" / "installed_plugins.json", {})
+    if pid not in installed.get("plugins", {}):
+        return "missing"
+    settings = load_json(CLAUDE_DIR / "settings.json", {})
+    return "enabled" if settings.get("enabledPlugins", {}).get(pid) is True else "disabled"
+
+
+def works(lang, path):
+    """Whether the server program at path exists and can serve."""
+    spec = LANGS[lang]
+    if not os.path.isfile(path):
+        return False
+    if "beside" in spec:
+        # The server must find a TypeScript with a tsserver in a folder above its real file.
+        here = pathlib.Path(os.path.realpath(path)).parent
+        if not any((d / spec["beside"]).is_file() for d in (here, *here.parents)):
+            return False
+    if "runs" in spec:
+        try:
+            done = subprocess.run([str(path), *spec["runs"]], stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=VERSION_TIMEOUT, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return done.returncode == 0
+    return True
+
+
+def server_on_path(lang):
+    found = shutil.which(LANGS[lang]["server"])
+    return bool(found) and works(lang, found)
+
+
+def server_off_path(lang):
+    """A working server that PATH does not reach, or reaches only after a broken copy."""
+    spec = LANGS[lang]
+    candidates = []
+    if "bin_dir" in spec:
+        candidates.append(spec["bin_dir"] / spec["server"])
+    if "folder" in spec:
+        candidates.append(LOCAL_BIN / spec["server"])
+    return next((c for c in candidates if works(lang, c)), None)
+
+
+def folder_server(lang):
+    """The server inside its own npm folder when that install is complete, else None."""
+    spec = LANGS[lang]
+    if "folder" not in spec:
+        return None
+    target = spec["folder"] / "node_modules" / ".bin" / spec["server"]
+    return target if works(lang, target) else None
+
+
+# ------------------------------------------------------------------ install steps
+
+def link_command(lang):
+    spec = LANGS[lang]
+    target = spec["folder"] / "node_modules" / ".bin" / spec["server"]
+    return ["ln", "-sfn", str(target), str(LOCAL_BIN / spec["server"])]
+
+
+def server_commands(lang):
+    """The commands that install the server, as argument lists."""
+    spec = LANGS[lang]
+    if "folder" in spec:
+        return [["npm", "install", "--prefix", str(spec["folder"]), *spec["packages"]],
+                link_command(lang)]
+    return [spec["install"]]
+
+
+def plugin_commands(lang, state):
+    if state == "missing":
+        return [["claude", "plugin", "install", plugin_id(lang), "--scope", "user"]]
+    return []
+
+
+def shown(commands):
+    return " && ".join(" ".join(_quote(a) for a in c) for c in commands)
+
+
+def _quote(arg):
+    return arg if arg and all(ch.isalnum() or ch in "-_./@=:~" for ch in arg) else json.dumps(arg)
+
+
+def run(commands):
+    for command in commands:
+        if command[0] == "ln":
+            LOCAL_BIN.mkdir(parents=True, exist_ok=True)
+        try:
+            # Output goes straight to the terminal, so no pipe can fill up and block.
+            done = subprocess.run(command, check=False)
+        except OSError as exc:
+            warn(f"{command[0]}: {exc}")
+            return False
+        if done.returncode != 0:
+            warn(f"{' '.join(command)} exited {done.returncode}")
+            return False
+    return True
+
+
+def ask(question):
+    try:
+        with open("/dev/tty") as tty:
+            sys.stdout.write(f"{question} [Y/n] ")
+            sys.stdout.flush()
+            answer = tty.readline().strip().lower()
+    except OSError:
+        return False
+    return answer in ("", "y", "yes", "e", "evet")
+
+
+# ------------------------------------------------------------------ ensure
+
+def plan(lang, state):
+    """(plugin commands, server commands, blocker) for one language.
+
+    A blocker is what stops the server step, with the advice that clears it; the
+    server commands are then empty."""
+    spec = LANGS[lang]
+    plugin = plugin_commands(lang, state)
+    if server_on_path(lang):
+        return plugin, [], ""
+    place = server_off_path(lang)
+    if place:
+        first = shutil.which(spec["server"])
+        reached = f"PATH finds {first} first" if first else "that folder is not on PATH"
+        return plugin, [], f"{spec['server']} is installed in {place.parent}, but {reached}; " \
+                           f"put {place.parent} first on PATH"
+    if folder_server(lang):
+        # The npm install is complete and only its link is gone: no npm needed.
+        return plugin, [link_command(lang)], ""
+    server = server_commands(lang)
+    if shutil.which(spec["needs"]) is None:
+        return plugin, [], f"no {spec['needs']}, so {spec['server']} cannot be installed. " \
+                           f"Then run: {shown(server)}"
+    return plugin, server, ""
+
+
+def ensure(lang, answer, where):
+    spec = LANGS[lang]
+    state = plugin_state(lang)
+    if state == "disabled":
+        # Turned off on purpose: neither enabled again nor given a server.
+        return "ok"
+    plugin, server, blocker = plan(lang, state)
+    if blocker and not plugin:
+        warn(f"{spec['plugin']}: {blocker}")
+        return "blocked"
+    steps = plugin + server
+    if not steps:
+        return "ok"
+    missing = []
+    if plugin:
+        missing.append(f"the {spec['plugin']} plugin is not installed")
+    if server:
+        missing.append(f"{spec['server']} is not on PATH")
+    say(f"\n{where} uses {lang}: {', and '.join(missing)}.")
+    if answer != "no":
+        say(f"    Would run: {shown(steps)}")
+    if answer == "no" or (answer == "ask" and not ask(f"Set up {lang} code lookups now?")):
+        say(f"    Skipped. Set it up with: {shown(steps)}")
+        return "declined"
+    if not run(steps):
+        warn(f"{spec['plugin']}: setup failed; code lookups fall back to grep")
+        return "failed"
+    if blocker:
+        warn(f"{spec['plugin']}: {blocker}")
+        return "blocked"
+    if not server_on_path(lang):
+        warn(f"{spec['server']} installed but not usable from PATH; put {LOCAL_BIN} "
+             f"or {spec.get('bin_dir', LOCAL_BIN)} first on PATH")
+        return "failed"
+    say(f"    {lang}: ready")
+    return "ok"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    det = sub.add_parser("detect")
+    det.add_argument("dirs", nargs="+")
+    ens = sub.add_parser("ensure")
+    ens.add_argument("--lang", action="append", default=[], choices=sorted(LANGS))
+    ens.add_argument("--detect", action="append", default=[], metavar="DIR")
+    ens.add_argument("--answer", choices=("ask", "yes", "no"), default="ask")
+    ens.add_argument("--remember-declines", action="store_true")
+    ens.add_argument("--reask", action="store_true")
+    args = parser.parse_args()
+
+    if args.command == "detect":
+        for folder in args.dirs:
+            for lang in detect(folder):
+                print(lang)
+        return 0
+
+    declines = load_json(DECLINES_FILE, {}) if args.remember_declines else {}
+    if not (isinstance(declines, dict)
+            and all(isinstance(v, list) for v in declines.values())):
+        warn(f"{DECLINES_FILE}: not a map of folder to languages; treated as empty")
+        declines = {}
+    changed = False
+    # Each language once: from --lang (the defaults) first, then from each folder.
+    todo = {lang: "This setup" for lang in args.lang}
+    for folder in args.detect:
+        key = str(pathlib.Path(folder).resolve())
+        if args.reask and declines.pop(key, None) is not None:
+            changed = True
+        for lang in detect(key):
+            if lang not in declines.get(key, []):
+                todo.setdefault(lang, key)
+    if args.answer == "ask" and not sys.stdin.isatty():
+        args.answer = "no"
+
+    status = 0
+    for lang, where in todo.items():
+        result = ensure(lang, args.answer, where)
+        # Only a person's "no" is saved; --answer no and a run with no terminal only print.
+        if (result == "declined" and args.remember_declines and args.answer == "ask"
+                and where != "This setup"):
+            declines.setdefault(where, []).append(lang)
+            changed = True
+            say("    Not asked again for this project; runclaude --lsp asks again.")
+        if result in ("failed", "blocked"):
+            status = 1
+    if changed:
+        DECLINES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = DECLINES_FILE.with_suffix(f".tmp-{os.getpid()}-{int(time.time())}")
+        tmp.write_text(json.dumps(declines, indent=2, sort_keys=True) + "\n")
+        tmp.replace(DECLINES_FILE)
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

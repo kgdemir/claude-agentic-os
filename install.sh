@@ -365,13 +365,16 @@ if [ "$WITH_LAUNCHER" = "yes" ]; then
     echo "!! The launcher supports macOS and Linux only; skipping on $OS_NAME." >&2
   else
     mkdir -p "$DEST/bin"
-    if [ -e "$DEST/bin/runclaude" ] && ! cmp -s "$SRC_DIR/.claude/bin/runclaude" "$DEST/bin/runclaude"; then
-      cp -p "$DEST/bin/runclaude" "$DEST/bin/runclaude.backup-$STAMP"
-      echo "    backed up  $DEST/bin/runclaude.backup-$STAMP"
-    fi
-    cp -p "$SRC_DIR/.claude/bin/runclaude" "$DEST/bin/runclaude"
-    chmod +x "$DEST/bin/runclaude"
-    echo "    installed  $DEST/bin/runclaude"
+    # lsp-setup sets up LSP plugins and servers for the project runclaude opens.
+    for BIN in runclaude lsp-setup; do
+      if [ -e "$DEST/bin/$BIN" ] && ! cmp -s "$SRC_DIR/.claude/bin/$BIN" "$DEST/bin/$BIN"; then
+        cp -p "$DEST/bin/$BIN" "$DEST/bin/$BIN.backup-$STAMP"
+        echo "    backed up  $DEST/bin/$BIN.backup-$STAMP"
+      fi
+      cp -p "$SRC_DIR/.claude/bin/$BIN" "$DEST/bin/$BIN"
+      chmod +x "$DEST/bin/$BIN"
+      echo "    installed  $DEST/bin/$BIN"
+    done
     # The function, not a bare PATH entry: it re-sources the memsearch venv in
     # the calling shell after the launcher exits, which a subprocess cannot do.
     RC_MARKER="# >>> claude rules pack (runclaude) >>>"
@@ -438,43 +441,11 @@ https://github.com/affaan-m/ECC.git
 zilliztech/memsearch
 anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier feature-dev commit-commands superpowers frontend-design security-guidance claude-code-setup claude-md-management plugin-dev skill-creator context7 github playwright typescript-lsp csharp-lsp"
 
-# Language servers for the LSP plugins above. typescript-language-server drives
-# TypeScript's tsserver, which TypeScript 7 (the native port) no longer ships,
-# so the server gets its own folder with TypeScript 6 beside it, linked into
-# ~/.local/bin; a global tsc of any version is left alone. Once TypeScript 7
-# ships its own language server, this can move to it.
-TS_LSP_SERVER_MAJOR="6"
-TS_LSP_TYPESCRIPT_MAJOR="6"
-TS_LSP_DIR="$HOME/.local/share/ts-lsp"
-TS_LSP_LINK="$HOME/.local/bin/typescript-language-server"
-TS_LSP_BIN="$TS_LSP_DIR/node_modules/.bin/typescript-language-server"
-TS_LSP_TSSERVER_REL="node_modules/typescript/lib/tsserver.js"
-TS_LSP_TSSERVER="$TS_LSP_DIR/$TS_LSP_TSSERVER_REL"
-# Shown to the person only; ts_lsp_install runs it with each path quoted.
-TS_LSP_INSTALL="npm install --prefix \"$TS_LSP_DIR\" typescript-language-server@$TS_LSP_SERVER_MAJOR typescript@$TS_LSP_TYPESCRIPT_MAJOR && ln -sfn \"$TS_LSP_BIN\" \"$TS_LSP_LINK\""
-CS_LSP_INSTALL="dotnet tool install --global csharp-ls"
-DOTNET_TOOLS_DIR="$HOME/.dotnet/tools"
-
-ts_lsp_install() {
-  npm install --prefix "$TS_LSP_DIR" "typescript-language-server@$TS_LSP_SERVER_MAJOR" \
-    "typescript@$TS_LSP_TYPESCRIPT_MAJOR" \
-    && mkdir -p "$(dirname "$TS_LSP_LINK")" \
-    && ln -sfn "$TS_LSP_BIN" "$TS_LSP_LINK"
-}
-
-# Zero when the typescript-language-server first on PATH has a TypeScript with
-# a tsserver in a folder above its real file, as check-lsp-servers.py checks.
-# A global install beside TypeScript 6 or older counts; one beside 7 does not.
-ts_lsp_works() {
-  local found dir
-  found="$(command -v typescript-language-server)" || return 1
-  dir="$(python3 -c 'import os, sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "$found")" || return 1
-  while :; do
-    [ -f "$dir/$TS_LSP_TSSERVER_REL" ] && return 0
-    [ "$dir" = "/" ] && return 1
-    dir="$(dirname "$dir")"
-  done
-}
+# Language servers for the LSP plugins above, plus the plugin and server for
+# each language found under the projects root (ADR-0018). One helper does both
+# here and in runclaude.
+LSP_SETUP="$SRC_DIR/.claude/bin/lsp-setup"
+LSP_DEFAULT_LANGS="typescript csharp"
 
 if [ -z "$WITH_PLUGINS" ]; then
   if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
@@ -528,8 +499,6 @@ offer_install() { # offer_install <tool> <why> <how> [package]
   confirm_install "$tool" "$why" "$how" || return 1
   case "$tool" in
     claude) curl -fsSL https://claude.ai/install.sh | bash ;;
-    # Unquoted on purpose: the constant is one command line, split into words.
-    csharp-ls) $CS_LSP_INSTALL || return 1 ;;
     *) pkg_install "$package" || return 1 ;;
   esac
   hash -r
@@ -721,55 +690,28 @@ PY
   # An LSP plugin only names its language server; the program is installed on
   # its own, and without it the LSP tool cannot start (guides/core/lsp.md).
   # Asked like any missing tool: --install-deps installs, --no-deps prints.
-  case "$INSTALLED_PLUGIN_IDS" in
-    *typescript-lsp@*)
-      if ts_lsp_works; then
-        :  # a server with a tsserver beside it is already first on PATH
-      elif [ -f "$TS_LSP_TSSERVER" ] && [ ! -e "$TS_LSP_LINK" ]; then
-        mkdir -p "$(dirname "$TS_LSP_LINK")" && ln -sfn "$TS_LSP_BIN" "$TS_LSP_LINK" \
-          && echo "    linked     $TS_LSP_LINK"
-      elif [ -f "$TS_LSP_TSSERVER" ]; then
-        :  # installed and linked; the PATH check below says what is in the way
-      elif ! command -v npm >/dev/null 2>&1; then
-        echo "!! typescript-lsp: no npm, so typescript-language-server is not installed." >&2
-        echo "   Install npm, then run: $TS_LSP_INSTALL" >&2
-      elif confirm_install typescript-language-server \
-             "typescript-lsp needs it, with TypeScript $TS_LSP_TYPESCRIPT_MAJOR beside it, to answer code lookups in TypeScript and JavaScript." \
-             "$TS_LSP_INSTALL" \
-           && ts_lsp_install; then
-        echo "    installed  $TS_LSP_LINK"
-      else
-        echo "!! typescript-lsp has no server; code lookups fall back to grep." >&2
-      fi
-      if ! ts_lsp_works && [ -f "$TS_LSP_TSSERVER" ]; then
-        TS_LSP_FOUND="$(command -v typescript-language-server || true)"
-        if [ -z "$TS_LSP_FOUND" ]; then
-          echo "!! $(dirname "$TS_LSP_LINK") is not on PATH; add it so typescript-lsp finds its server." >&2
-        else
-          echo "!! $TS_LSP_FOUND comes before $TS_LSP_LINK on PATH and has no TypeScript with a tsserver beside it;" >&2
-          echo "   put $(dirname "$TS_LSP_LINK") first, or remove the other copy." >&2
-        fi
-      fi
-      ;;
-  esac
-  case "$INSTALLED_PLUGIN_IDS" in
-    *csharp-lsp@*)
-      if ! command -v dotnet >/dev/null 2>&1; then
-        echo "!! csharp-lsp: no dotnet SDK, so csharp-ls is not installed." >&2
-        echo "   Install the .NET SDK, then run: $CS_LSP_INSTALL" >&2
-      elif ! command -v csharp-ls >/dev/null 2>&1 && [ -x "$DOTNET_TOOLS_DIR/csharp-ls" ]; then
-        echo "!! csharp-ls is in $DOTNET_TOOLS_DIR, which is not on PATH; add it there." >&2
-      elif ! offer_install csharp-ls \
-           "csharp-lsp needs it to answer code lookups in C#." \
-           "$CS_LSP_INSTALL"; then
-        if [ -x "$DOTNET_TOOLS_DIR/csharp-ls" ]; then
-          echo "!! csharp-ls is in $DOTNET_TOOLS_DIR, which is not on PATH; add it there." >&2
-        else
-          echo "!! csharp-lsp has no server; code lookups fall back to grep." >&2
-        fi
-      fi
-      ;;
-  esac
+  LSP_ANSWER=ask
+  if [ "$INSTALL_DEPS" = "yes" ]; then
+    LSP_ANSWER=yes
+  elif [ "$INSTALL_DEPS" = "no" ] || [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
+    LSP_ANSWER=no
+  fi
+  LSP_ARGS=(ensure --answer "$LSP_ANSWER")
+  # A default language counts only when the catalog step above installed its
+  # plugin, so a plugin left out on purpose is not installed behind its back.
+  for LANG_NAME in $LSP_DEFAULT_LANGS; do
+    case "$INSTALLED_PLUGIN_IDS" in
+      *"$LANG_NAME-lsp@"*) LSP_ARGS+=(--lang "$LANG_NAME") ;;
+    esac
+  done
+  if [ -d "$PROJECT_ROOT" ]; then
+    for PROJECT in "$PROJECT_ROOT"/*/; do
+      [ -d "$PROJECT" ] && LSP_ARGS+=(--detect "${PROJECT%/}")
+    done
+  fi
+  # The helper reads plugin state from CLAUDE_CONFIG_DIR, so point it at $DEST.
+  CLAUDE_CONFIG_DIR="$DEST" python3 -I "$LSP_SETUP" "${LSP_ARGS[@]}" \
+    || echo "!! Some LSP servers are missing; code lookups there fall back to grep." >&2
 fi
 
 # ------------------------------------------------------- security-audit skill
