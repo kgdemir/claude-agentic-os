@@ -27,7 +27,7 @@ it stops. When one happens, replace the *Why* line with its *Cost*.
 - **No speculative fixes.** When a bug reproduces, find the mechanism that predicts the *observed detail*: how many times the error prints, where in the output, in what order. A plausible story that explains "roughly this" is not a diagnosis.
 - **Unchanged output disproves the diagnosis.** If a shipped fix does not change the output at all, stop and re-diagnose rather than layering the next theory on the last one.
   *Cost: four attempts at one error, three of them speculative, each committed and each needing a manual run against a live server. None changed a single line of output.*
-- **Code symbols: use the `LSP` tool, not grep.** Definition, references, callers, implementations: `goToDefinition`, `findReferences`, `incomingCalls`, `goToImplementation`. grep stays right for text that is not a symbol. Details, server checks and fallbacks: `~/.claude/guides/tools/lsp.md`.
+- **Code symbols: use the `LSP` tool, not grep.** Definition, references, callers, implementations: `goToDefinition`, `findReferences`, `incomingCalls`, `goToImplementation`. grep stays right for text that is not a symbol. Details, server checks and fallbacks: `~/.claude/guides/core/lsp.md`.
   *Cost: in a TypeScript/React session with its language server running, every lookup went through grep, symbols included; the add-on guide was never read and the `LSP` tool never called, until the owner asked.*
 
 ## 3. Background work and delegation

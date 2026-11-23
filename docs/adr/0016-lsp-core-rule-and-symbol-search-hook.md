@@ -121,3 +121,8 @@ it matters, and a warn-only reminder at the moment of the call fixes that withou
   right. An unscoped search in an MVC, Razor Pages or Blazor project still warns, and
   `findReferences` misses uses in views, so the reminder and `lsp.md` now say to grep the view
   files as well and keep the two result sets apart.
+
+## Amendment 2026-11-24
+
+Decision item 1 kept `lsp.md` as an add-on with its trigger row. ADR-0017 moves it to
+`guides/core/lsp.md`, imported in every session; the core rule and the hook stay as decided here.

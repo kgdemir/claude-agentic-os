@@ -61,7 +61,7 @@ RG_TYPES = {
 GLOB_EXTENSION = re.compile(r"\.(\{[^}]*\}|[A-Za-z0-9]+)$")
 GIT_TIMEOUT_SECONDS = 2
 LSP_HOOK = pathlib.Path(__file__).with_name("check-lsp-servers.py")
-GUIDE = "~/.claude/guides/tools/lsp.md"
+GUIDE = "~/.claude/guides/core/lsp.md"
 
 
 def symbol(pattern: str) -> str:

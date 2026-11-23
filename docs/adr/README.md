@@ -21,3 +21,4 @@ renumbered; an accepted ADR is superseded, not rewritten.
 | [0014](0014-launcher-keeps-one-claude-code.md) | The launcher keeps one Claude Code, the native one, first on PATH | accepted | 2026-11-10 |
 | [0015](0015-agents-blocked-near-usage-limits.md) | The statusline saves the usage limits, and new agents are blocked near them | accepted | 2026-11-16 |
 | [0016](0016-lsp-core-rule-and-symbol-search-hook.md) | A core LSP rule, and a warn-only hook for text searches on code symbols | accepted | 2026-11-17 |
+| [0017](0017-lsp-guide-is-a-core-guide.md) | The LSP guide is a core guide, loaded in every session | accepted | 2026-11-24 |

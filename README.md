@@ -142,6 +142,7 @@ only when `settings.json` does not already carry them:
     project-docs.md              README.md, capabilities.md, SECURITY.md
     docs-updates.md              docs change on request; baseline marker
     docs-folder.md               docs/adr/ and docs/architecture.md (C4)
+    lsp.md                       code lookups through the LSP tool, not grep; missing servers
   stacks/                        read when the project uses that stack
     dotnet.md                    .NET conventions (test gate, warnings as errors,
                                  async, HttpClient, options, logging, packages)
@@ -165,7 +166,6 @@ only when `settings.json` does not already carry them:
     redis.md                     honest fallback, one connection, TTLs, no KEYS
     github-actions.md            SHA-pinned actions, least privilege, no script injection
     dependency-updates.md        Dependabot/Renovate grouping, majors one at a time
-    lsp.md                       code lookups through the LSP tool, not grep; missing servers
     skills.md                    which skill, review command or plugin to use for a task
   features/                      read when the project has that feature
     realtime-media.md            WebSocket, SignalR, WebRTC, SFU: docs and hub rules

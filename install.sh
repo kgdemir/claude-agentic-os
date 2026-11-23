@@ -316,6 +316,15 @@ for OLD in agent-working-rules project-tools project-claude-md project-docs \
   fi
 done
 
+# Guides that moved between folders; the copy in the old folder would be a
+# stale second rule (lsp.md: tools/ to core/, ADR-0017).
+for OLD in tools/lsp; do
+  if [ -f "$DEST/guides/$OLD.md" ]; then
+    mv "$DEST/guides/$OLD.md" "$DEST/guides/$OLD.md.backup-$STAMP"
+    echo "    moved old  $DEST/guides/$OLD.md.backup-$STAMP"
+  fi
+done
+
 # Placeholders are always {{UPPER_CASE}}; guides may quote other {{ }} syntax
 # (GitHub Actions ${{ github.ref }}), which must not count as a leftover. Only
 # the files written above are checked: plugins and skills under $DEST use the
@@ -710,7 +719,7 @@ print(f"    enabled {len(ids)} plugin(s), auto-update on, in {path}")
 PY
 
   # An LSP plugin only names its language server; the program is installed on
-  # its own, and without it the LSP tool cannot start (guides/tools/lsp.md).
+  # its own, and without it the LSP tool cannot start (guides/core/lsp.md).
   # Asked like any missing tool: --install-deps installs, --no-deps prints.
   case "$INSTALLED_PLUGIN_IDS" in
     *typescript-lsp@*)

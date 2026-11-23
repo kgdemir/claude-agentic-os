@@ -5,7 +5,7 @@ is not on PATH, or cannot find the library it drives.
 An LSP plugin only names the server program (`lspServers.<name>.command`); the
 program itself is installed separately. Without it the `LSP` tool has nothing to
 ask, and every code lookup falls back to grep without anyone noticing (see
-guides/tools/lsp.md).
+guides/core/lsp.md).
 
 Warn-only and silent when every server is found. Reads the user's settings.json
 for enabled plugins, and each plugin's `lspServers` from its marketplace entry,
@@ -20,7 +20,7 @@ import sys
 PLUGIN_MANIFEST = pathlib.Path(".claude-plugin") / "plugin.json"
 LSP_FILE = ".lsp.json"
 MARKETPLACE_MANIFEST = pathlib.Path(".claude-plugin") / "marketplace.json"
-GUIDE = "~/.claude/guides/tools/lsp.md"
+GUIDE = "~/.claude/guides/core/lsp.md"
 # Servers that drive a library found next to them, and the file they load from
 # it. typescript-language-server runs TypeScript's tsserver, which TypeScript 7
 # (the native port) no longer ships, so a server installed beside TypeScript 7

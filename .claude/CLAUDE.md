@@ -24,6 +24,7 @@ Detailed rules live in `~/.claude/guides/`. These apply to every project.
 - `README.md`, `capabilities.md`, `SECURITY.md`: @~/.claude/guides/core/project-docs.md
 - Doc updates only on request, baseline marker, when to rebuild the PDF: @~/.claude/guides/core/docs-updates.md
 - `docs/adr/` + `docs/user-guides/` (ADR template `~/.claude/templates/adr-template.md`): @~/.claude/guides/core/docs-folder.md
+- Code lookups (definitions, references, callers) through the `LSP` tool, not grep: @~/.claude/guides/core/lsp.md
 {{PROJECT_LOCATION_IMPORT}}
 
 ## Add-on rules (read when they apply)
@@ -52,7 +53,6 @@ with the Read tool before working on that part, and follow it.
 | Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
 | Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
 | Project exports Markdown to PDF | `~/.claude/guides/tools/pdf-export.md` |
-| Finding where code is defined, used or called (functions, classes, methods, types) | `~/.claude/guides/tools/lsp.md` |
 | Realtime messaging or live audio/video (WebSocket, SignalR, WebRTC, SFU) | `~/.claude/guides/features/realtime-media.md` |
 | Project ships or calls an AI/ML model | `~/.claude/guides/features/ai-models.md` |
 | Login, tokens, sessions, LDAP, or fetching user-supplied URLs | `~/.claude/guides/features/auth.md` |
