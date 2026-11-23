@@ -7,6 +7,7 @@
 ## Clarifications
 
 - **ALWAYS** ask clarification questions via `AskUserQuestion` selector (options), never as plain written text. Applies everywhere: normal prompts, plugins, skills, subagent results needing user input. User may miss written questions.
+- In `AskUserQuestion` questions and options, never write "I"/"me" or "you"/"your": write **Claude** for the assistant and the user's name for the user. With "I" and "you" it is not always clear who a task is for.
 
 ## Ownership & Attribution
 
