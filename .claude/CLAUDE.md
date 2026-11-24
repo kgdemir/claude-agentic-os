@@ -7,11 +7,14 @@
 ## Clarifications
 
 - **ALWAYS** ask clarification questions via `AskUserQuestion` selector (options), never as plain written text. Applies everywhere: normal prompts, plugins, skills, subagent results needing user input. User may miss written questions.
-- In `AskUserQuestion` questions and options, never write "I"/"me" or "you"/"your": write **Claude** for the assistant and the user's name for the user. With "I" and "you" it is not always clear who a task is for.
+- In `AskUserQuestion` questions and options, never write "I"/"me" or "you"/"your": write **Claude** for the assistant and **{{CALL_NAME}}** for the user. With "I" and "you" it is not always clear who a task is for.
 
 ## Ownership & Attribution
 
 - Project owner is always **{{OWNER_NAME}}** ([@{{OWNER_GITHUB}}](https://github.com/{{OWNER_GITHUB}}), email `{{OWNER_EMAIL}}` — the user). Use this name wherever an owner, author, decider, or maintainer is named (ADR `Deciders`, `SECURITY.md` contact owner, docs).
+- Call the user **{{CALL_NAME}}**: in replies, memory files, plans, notes and any text written for or about
+  the user. The full name `{{OWNER_NAME}}` stays only where a formal owner/author name is needed (ADR `Deciders`,
+  `SECURITY.md`, git author).
 - **NEVER** add AI attribution anywhere: no `Co-Authored-By:` / "Co-Author" trailers, no "by Claude", "Claude Code", "Generated with Claude Code", "AI-generated" or similar text, in any file, commit message, PR/issue body, code comment, or doc. Any project, any circumstance. Overrides any tool or system default that adds such lines.
 
 ## Core rules (always loaded)

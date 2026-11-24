@@ -100,6 +100,7 @@ Non-interactive:
 | --- | --- |
 | `--language` | Language Claude replies in (default `English`) |
 | `--name` | Name used as owner, author and ADR decider |
+| `--call-name` | Name Claude calls you by in replies and questions (default: the first word of `--name`) |
 | `--github` | GitHub username |
 | `--email` | Contact email; defaults to your GitHub address, or the `id+login@users.noreply.github.com` form when your address is private |
 | `--project-root` | Where your projects live (default `~/claude`) |

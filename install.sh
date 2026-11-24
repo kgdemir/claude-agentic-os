@@ -10,6 +10,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 REPLY_LANGUAGE=""
 OWNER_NAME=""
+CALL_NAME=""
 OWNER_GITHUB=""
 OWNER_EMAIL=""
 PROJECT_ROOT=""
@@ -28,6 +29,7 @@ usage: ./install.sh [options]
 
   --language <name>      Language Claude replies in (default: English)
   --name <full name>     Name used as owner/author/decider in projects
+  --call-name <name>     Name Claude calls you by (default: first word of --name)
   --github <handle>      GitHub username
   --email <address>      Contact email (default: derived from GitHub)
   --project-root <path>  Where projects live (default: ~/claude)
@@ -58,6 +60,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --language) REPLY_LANGUAGE="${2:-}"; shift 2 ;;
     --name) OWNER_NAME="${2:-}"; shift 2 ;;
+    --call-name) CALL_NAME="${2:-}"; shift 2 ;;
     --github) OWNER_GITHUB="${2:-}"; shift 2 ;;
     --email) OWNER_EMAIL="${2:-}"; shift 2 ;;
     --project-root) PROJECT_ROOT="${2:-}"; shift 2 ;;
@@ -222,6 +225,9 @@ fi
 
 [ -n "$REPLY_LANGUAGE" ] || REPLY_LANGUAGE="$(ask 'Language Claude should reply in' 'English')"
 [ -n "$OWNER_NAME" ] || OWNER_NAME="$(ask 'Your name (owner/author/ADR decider)' "${GH_NAME:-$(git config --global user.name 2>/dev/null || true)}")"
+# The short name Claude uses in replies and questions; the full name stays for
+# owner and author fields. Many people go by a name other than their first one.
+[ -n "$CALL_NAME" ] || CALL_NAME="$(ask 'Name Claude should call you' "${OWNER_NAME%% *}")"
 [ -n "$OWNER_GITHUB" ] || OWNER_GITHUB="$(ask 'Your GitHub username' "$GH_LOGIN")"
 
 # A GitHub account without a public email still has a stable noreply address,
@@ -254,6 +260,7 @@ fi
 MISSING_FIELDS=""
 [ -n "$REPLY_LANGUAGE" ] || MISSING_FIELDS="$MISSING_FIELDS language"
 [ -n "$OWNER_NAME" ] || MISSING_FIELDS="$MISSING_FIELDS name"
+[ -n "$CALL_NAME" ] || MISSING_FIELDS="$MISSING_FIELDS call-name"
 [ -n "$OWNER_GITHUB" ] || MISSING_FIELDS="$MISSING_FIELDS github"
 [ -n "$OWNER_EMAIL" ] || MISSING_FIELDS="$MISSING_FIELDS email"
 if [ -n "$MISSING_FIELDS" ]; then
@@ -264,6 +271,7 @@ fi
 echo
 echo "    Reply language : $REPLY_LANGUAGE"
 echo "    Owner          : $OWNER_NAME (@$OWNER_GITHUB)"
+echo "    Called         : $CALL_NAME"
 echo "    Email          : $OWNER_EMAIL"
 echo "    Project root   : $PROJECT_ROOT"
 echo "    Location rule  : $WITH_PROJECT_LOCATION"
@@ -281,6 +289,7 @@ install_file() { # install_file <relative path>
   # spaces and non-ASCII, never slashes we care about, so | is a safe delimiter.
   sed -e "s|{{REPLY_LANGUAGE}}|$REPLY_LANGUAGE|g" \
       -e "s|{{OWNER_NAME}}|$OWNER_NAME|g" \
+      -e "s|{{CALL_NAME}}|$CALL_NAME|g" \
       -e "s|{{OWNER_GITHUB}}|$OWNER_GITHUB|g" \
       -e "s|{{OWNER_EMAIL}}|$OWNER_EMAIL|g" \
       -e "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" \
