@@ -82,6 +82,24 @@ picks = pick_mod.pick(library, tags_of, budget=3.4, disk=4.5, today=today, top=5
 check("pick disk limit", [p["model"] for p in picks] == ["big:1b", "small:3b"], picks)
 picks = pick_mod.pick(library, tags_of, budget=3.4, disk=28, today=today, top=1)
 check("pick top", [p["model"] for p in picks] == ["big:4b"], picks)
+# An installed size needs no download, so a full disk does not drop it.
+picks = pick_mod.pick(library, tags_of, budget=3.4, disk=1, today=today, top=5,
+                      have={"big:4b"})
+check("pick installed ignores disk", [p["model"] for p in picks] == ["big:4b"], picks)
+check("same model and variant", pick_mod.is_same_model("big:4b-gpu", "big:4b")
+      and pick_mod.is_same_model("big:4b", "big:4b")
+      and not pick_mod.is_same_model("big:40b", "big:4b"))
+
+
+def broken_fetch(url):
+    import http.client
+    raise http.client.IncompleteRead(b"")
+
+
+real_fetch = pick_mod.fetch
+pick_mod.fetch = broken_fetch
+check("tags fetch error is one warning", pick_mod.tags_fetcher("big") == {})
+pick_mod.fetch = real_fetch
 
 with tempfile.TemporaryDirectory() as root:
     root = pathlib.Path(root)
@@ -107,14 +125,18 @@ with tempfile.TemporaryDirectory() as root:
         budget, where = pick_mod.memory_budget()
         check("no gpu budget", where.startswith(("CPU", "Mac")) and budget > 0, (budget, where))
 
-        pick_mod.CHOICE_FILE = root / ".claude" / "ask-llm" / "local-model"
+        pick_mod.ASK_LLM.LOCAL_MODEL_FILE = root / ".claude" / "ask-llm" / "local-model"
         check("install ok", pick_mod.install("big:4b") == 0
-              and pick_mod.CHOICE_FILE.read_text() == "big:4b\n"
+              and pick_mod.ASK_LLM.LOCAL_MODEL_FILE.read_text() == "big:4b\n"
               and log.read_text() == "pull big:4b\n", log.read_text())
+        os.environ.pop("ASK_LLM_LOCAL_MODEL", None)
+        check("in use from saved file", pick_mod.in_use_model() == "big:4b")
+        pick_mod.ASK_LLM.LOCAL_MODEL_FILE.unlink()
+        check("in use default", pick_mod.in_use_model()
+              == pick_mod.ASK_LLM.DEFAULT_LOCAL_MODEL.removeprefix("ollama/"))
         os.environ["STUB_PULL_EXIT"] = "1"
-        pick_mod.CHOICE_FILE.unlink()
         check("install failed pull saves nothing", pick_mod.install("big:4b") == 1
-              and not pick_mod.CHOICE_FILE.exists())
+              and not pick_mod.ASK_LLM.LOCAL_MODEL_FILE.exists())
     finally:
         os.environ["PATH"] = old_path
         os.environ.pop("STUB_PULL_EXIT", None)

@@ -755,7 +755,9 @@ if [ "$WITH_LAUNCHER" = "yes" ]; then
   # A local model for ask-llm --private, sized to this machine's GPU and disk from
   # ollama.com's live list. Only asked at a terminal: a model is gigabytes, so -y
   # and runs without a terminal only print the command.
-  if command -v ollama >/dev/null 2>&1; then
+  # The bins are copied only on macOS and Linux (see the launcher step).
+  if [ "$OS_KIND" != "other" ] && [ -x "$DEST/bin/ollama-pick" ] \
+     && command -v ollama >/dev/null 2>&1; then
     echo
     if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
       echo "    Pick a local model for ask-llm --private later with: $DEST/bin/ollama-pick"

@@ -8,18 +8,23 @@
       that fits, with its pull count. Nothing is installed.
   ollama-pick --install NAME
       `ollama pull NAME`, then save NAME as the model `ask-llm --private` uses
-      (in ~/.claude/ask-llm/local-model; ASK_LLM_LOCAL_MODEL still wins).
+      (ask-llm's LOCAL_MODEL_FILE; ASK_LLM_LOCAL_MODEL still wins).
 
-A model fits when its file takes at most FIT_SHARE of the GPU's memory (the rest
-holds the context), or of the RAM on a machine without an NVIDIA GPU, where it runs
-on the CPU or, on a Mac, in shared memory. The list is read from the site each run,
-so no model name is fixed here. Standard library only.
+A model fits when its file takes at most FIT_SHARE of the NVIDIA GPU's memory (the
+rest holds the context). On a Mac it may take FIT_SHARE of the shared memory the GPU
+can use (MAC_GPU_SHARE of the RAM). Anywhere else, AMD GPUs included, it runs on the
+CPU and may take CPU_RAM_SHARE of the RAM. A model not yet installed also needs its
+size plus DISK_SPARE_GB of free disk. The list is read from the site each run, so no
+model name is fixed here. Reads ask-llm, next to it, for the local-model settings.
+Standard library only.
 """
 
 import argparse
 import concurrent.futures
 import datetime
-import html
+import http.client
+import importlib.machinery
+import importlib.util
 import json
 import os
 import pathlib
@@ -47,8 +52,22 @@ MAX_AGE_DAYS = 365
 CANDIDATES = 40
 FETCH_WORKERS = 8
 DEFAULT_TOP = 5
-# Read by ask-llm --private when ASK_LLM_LOCAL_MODEL is not set.
-CHOICE_FILE = pathlib.Path.home() / ".claude" / "ask-llm" / "local-model"
+# Errors a page fetch or parse can raise besides OSError.
+FETCH_ERRORS = (OSError, http.client.HTTPException, ValueError)
+
+
+def load_ask_llm():
+    """ask-llm, from the same folder: it owns the local-model file, prefix and default."""
+    path = str(pathlib.Path(__file__).resolve().parent / "ask-llm")
+    # No __pycache__ next to the bins (they may be links into the pack's checkout).
+    sys.dont_write_bytecode = True
+    loader = importlib.machinery.SourceFileLoader("ask_llm", path)
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader("ask_llm", loader))
+    loader.exec_module(module)
+    return module
+
+
+ASK_LLM = load_ask_llm()
 # "cloud" only means a cloud size exists too; cloud tags have "-cloud" and are skipped.
 SKIP_CAPABILITIES = {"embedding"}
 # Models made for one job (code, OCR, medicine, translation, safety filters,
@@ -145,7 +164,9 @@ def installed():
     return {line.split()[0] for line in out.splitlines()[1:] if line.strip()}
 
 
-def pick(library, tags_of, budget, disk, today, top):
+def pick(library, tags_of, budget, disk, today, top, have=frozenset()):
+    """The biggest fitting size of each fresh model, most pulled first. A size in
+    `have` (already installed) needs no download, so free disk does not limit it."""
     fresh = [m for m in library
              if not (m["capabilities"] & SKIP_CAPABILITIES)
              and not SPECIAL_PURPOSE.search(m["name"])
@@ -154,7 +175,8 @@ def pick(library, tags_of, budget, disk, today, top):
         all_tags = list(pool.map(tags_of, [m["name"] for m in fresh]))
     picks = []
     for model, tags in zip(fresh, all_tags):
-        fits = {t: s for t, s in tags.items() if s <= budget and s + DISK_SPARE_GB <= disk}
+        fits = {t: s for t, s in tags.items() if s <= budget
+                and (f"{model['name']}:{t}" in have or s + DISK_SPARE_GB <= disk)}
         if fits:
             tag = max(fits, key=fits.get)
             picks.append({"model": f"{model['name']}:{tag}", "size_gb": fits[tag],
@@ -166,18 +188,32 @@ def pick(library, tags_of, budget, disk, today, top):
 def tags_fetcher(name):
     try:
         return parse_tags(fetch(TAGS_URL.format(name=name)), name)
-    except OSError as exc:
+    except FETCH_ERRORS as exc:
         warn(f"{name}: tags not read ({exc})")
         return {}
+
+
+def in_use_model():
+    """The Ollama name ask-llm --private uses now, in ask-llm's own order."""
+    model = (os.environ.get("ASK_LLM_LOCAL_MODEL") or ASK_LLM.saved_local_model()
+             or ASK_LLM.DEFAULT_LOCAL_MODEL)
+    return model.removeprefix(ASK_LLM.OLLAMA_PREFIX)
+
+
+def is_same_model(current, listed):
+    """True for the listed tag itself or a local variant of it (qwen3.5:4b-gpu, made
+    with a Modelfile that only changes parameters)."""
+    return current == listed or current.startswith(listed + "-")
 
 
 def install(name):
     if subprocess.run(["ollama", "pull", name]).returncode != 0:
         warn(f"`ollama pull {name}` failed; is `ollama serve` running?")
         return 1
-    CHOICE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CHOICE_FILE.write_text(name + "\n")
-    print(f"ask-llm --private now uses {name} ({CHOICE_FILE})")
+    choice = ASK_LLM.LOCAL_MODEL_FILE
+    choice.parent.mkdir(parents=True, exist_ok=True)
+    choice.write_text(name + "\n")
+    print(f"ask-llm --private now uses {name} ({choice})")
     return 0
 
 
@@ -194,19 +230,18 @@ def main():
     disk = free_disk_gb()
     try:
         library = parse_library(fetch(LIBRARY_URL))
-    except OSError as exc:
+    except FETCH_ERRORS as exc:
         warn(f"could not read {LIBRARY_URL} ({exc})")
         return 1
     if not library:
         warn(f"no models found on {LIBRARY_URL}: the page changed (update parse_library)")
         return 1
-    picks = pick(library, tags_fetcher, budget, disk, datetime.date.today(), args.top)
     have = installed()
-    current = os.environ.get("ASK_LLM_LOCAL_MODEL", "").removeprefix("ollama/") or (
-        CHOICE_FILE.read_text().strip() if CHOICE_FILE.exists() else "")
+    picks = pick(library, tags_fetcher, budget, disk, datetime.date.today(), args.top, have)
+    current = in_use_model()
     for p in picks:
         p["installed"] = p["model"] in have
-        p["in_use"] = p["model"] == current
+        p["in_use"] = is_same_model(current, p["model"])
     if args.json:
         print(json.dumps({"runs_on": where, "fit_gb": round(budget, 1),
                           "free_disk_gb": round(disk, 1), "models": picks}, indent=2))

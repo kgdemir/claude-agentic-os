@@ -31,6 +31,9 @@ model = sys.argv[sys.argv.index("-m") + 1]
 prompt = sys.stdin.read()
 with open(os.environ["STUB_LOG"], "a") as log:
     log.write(json.dumps({{"model": model, "argv": sys.argv[1:], "stdin": prompt}}) + "\\n")
+# STUB_NO_THINK: reject the think option, as an llm-ollama without it does.
+if os.environ.get("STUB_NO_THINK") and "think" in sys.argv:
+    sys.stderr.write("Error: think\\n  Extra inputs are not permitted\\n"); sys.exit(1)
 code, out, err = json.loads(os.environ["STUB_PLAN"]).get(model, [1, "", "Unknown model"])
 sys.stdout.write(out); sys.stderr.write(err); sys.exit(code)
 """
@@ -150,7 +153,19 @@ with tempfile.TemporaryDirectory() as tmp:
     done, calls = run(root, ["--private", "payslip"], {"ollama/x:1b": [0, "x\n", ""]},
                       {"ASK_LLM_LOCAL_MODEL": "ollama/x:1b"})
     check("private env over saved", [c["model"] for c in calls] == ["ollama/x:1b"], calls)
+    # An llm-ollama without the think option: tried again without it.
+    done, calls = run(root, ["--private", "payslip"], {"ollama/qwen3.5:4b": [0, "q\n", ""]},
+                      {"STUB_NO_THINK": "1"})
+    check("private retry without think", done.stdout == "q\n" and len(calls) == 2
+          and "think" in calls[0]["argv"] and "think" not in calls[1]["argv"],
+          (calls, done.stderr))
     saved.unlink()
+    # A local-model file that cannot be read: one warning, then the default model.
+    saved.mkdir()
+    done, calls = run(root, ["--private", "payslip"], {"ollama/llama3.2:3b": [0, "l\n", ""]})
+    check("private unreadable saved file", done.returncode == 0 and done.stdout == "l\n"
+          and "not read" in done.stderr and "Traceback" not in done.stderr, done.stderr)
+    saved.rmdir()
 
     # Missing tools and wrong combinations: a clear message, no traceback.
     done, calls = run(root, ["hello"], env={"OPENAI_API_KEY": "x"}, tools=())

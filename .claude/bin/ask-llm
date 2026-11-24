@@ -52,6 +52,8 @@ OLLAMA_PREFIX = "ollama/"
 DEFAULT_LOCAL_MODEL = OLLAMA_PREFIX + "llama3.2:3b"
 # Written by `ollama-pick --install`: the Ollama name of the chosen local model.
 LOCAL_MODEL_FILE = pathlib.Path.home() / ".claude" / "ask-llm" / "local-model"
+# llm options for local models: no thinking text (see call_llm).
+NO_THINK = ["-o", "think", "false"]
 # Seconds one model may take before the next one in the chain is tried.
 MODEL_TIMEOUT = 300
 WEB_SITES = ("chatgpt", "gemini")
@@ -82,19 +84,33 @@ def read_prompt(words):
 def call_llm(model, prompt, system):
     """The answer from one model, or None with the reason printed."""
     command = ["llm", "--no-log", "-m", model]
+    if system:
+        command += ["-s", system]
     if model.startswith(OLLAMA_PREFIX):
         # Thinking models (qwen3.5 and others) otherwise write their reasoning into
         # the answer, or spend the whole reply on it and return nothing. Models
-        # without thinking accept the option too.
-        command += ["-o", "think", "false"]
-    if system:
-        command += ["-s", system]
+        # without thinking accept the option too; an llm-ollama older than the
+        # pinned one may not know it, so the call is tried once more without it.
+        done = run_llm(model, command + NO_THINK, prompt)
+        if done is None or done.returncode == 0 or "think" not in done.stderr:
+            return answer_of(model, done)
+    return answer_of(model, run_llm(model, command, prompt))
+
+
+def run_llm(model, command, prompt):
+    """The finished llm process, or None after a timeout."""
     try:
         # The prompt goes on stdin, so it never shows in the process list.
-        done = subprocess.run(command, input=prompt, text=True, capture_output=True,
+        return subprocess.run(command, input=prompt, text=True, capture_output=True,
                               timeout=MODEL_TIMEOUT, check=False)
     except subprocess.TimeoutExpired:
         warn(f"{model}: no answer after {MODEL_TIMEOUT}s")
+        return None
+
+
+def answer_of(model, done):
+    """The answer in a finished llm process, or None with the reason printed."""
+    if done is None:
         return None
     if done.returncode != 0:
         reason = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
@@ -111,6 +127,9 @@ def saved_local_model():
     try:
         name = LOCAL_MODEL_FILE.read_text().strip()
     except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError) as exc:
+        warn(f"{LOCAL_MODEL_FILE} not read ({exc}); using the default local model")
         return None
     return OLLAMA_PREFIX + name if name else None
 
