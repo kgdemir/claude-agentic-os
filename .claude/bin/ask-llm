@@ -13,6 +13,8 @@ can be sent with `ask-llm "Translate to English:" < notes.md`.
   --private   only the local Ollama model; the text never leaves the machine.
   (default)   each model in the chain, in order, moving on when one fails (no key,
               free limit reached, network): Gemini, OpenRouter's free model, OpenAI.
+              With no API key set for any of them, the ChatGPT web page, then the
+              Gemini one, instead (as --web; needs uv).
   --model M   that one model only, no chain.
   --out FILE  write the answer to FILE and print one line, so a long answer does
               not have to be read back in full.
@@ -50,6 +52,12 @@ DEFAULT_LOCAL_MODEL = OLLAMA_PREFIX + "llama3.2:3b"
 # Seconds one model may take before the next one in the chain is tried.
 MODEL_TIMEOUT = 300
 WEB_SITES = ("chatgpt", "gemini")
+# The keys the default chain needs: llm's key name and the variable that can stand
+# in for it. With none of them set, the default chain goes to the web pages.
+API_KEYS = {"gemini": "LLM_GEMINI_KEY", "openrouter": "OPENROUTER_KEY",
+            "openai": "OPENAI_API_KEY"}
+# Seconds `llm keys list` may take.
+KEYS_TIMEOUT = 30
 
 
 def warn(text):
@@ -90,6 +98,48 @@ def call_llm(model, prompt, system):
     return done.stdout
 
 
+def has_api_key():
+    """False only when no key for the default chain is set anywhere."""
+    if any(os.environ.get(variable) for variable in API_KEYS.values()):
+        return True
+    if shutil.which("llm") is None:
+        return False
+    try:
+        done = subprocess.run(["llm", "keys", "list"], capture_output=True, text=True,
+                              timeout=KEYS_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired:
+        warn(f"`llm keys list` gave no answer after {KEYS_TIMEOUT}s; trying the models")
+        return True
+    if done.returncode != 0:
+        # Unknown: run the chain, whose errors say what is wrong.
+        warn(f"`llm keys list` failed: {done.stderr.strip()}; trying the models")
+        return True
+    return bool(set(done.stdout.split()) & set(API_KEYS))
+
+
+def web_script():
+    """Path of ask-llm-web, or None with the reason printed."""
+    if shutil.which("uv") is None:
+        warn("the web pages need uv (https://docs.astral.sh/uv/), which runs ask-llm-web")
+        return None
+    return str(pathlib.Path(os.path.realpath(__file__)).with_name("ask-llm-web"))
+
+
+def ask_web_pages(prompt, out):
+    """Each web page in turn until one answers; ask-llm-web prints the answer."""
+    web = web_script()
+    if web is None:
+        return 1
+    for site in WEB_SITES:
+        command = [web, site] + (["--out", out] if out else [])
+        # The prompt goes on stdin, as to llm.
+        if subprocess.run(command, input=prompt, text=True, check=False).returncode == 0:
+            warn(f"answered by the {site} web page")
+            return 0
+    warn("no web page answered either")
+    return 1
+
+
 def deliver(answer, out):
     if out:
         pathlib.Path(out).write_text(answer)
@@ -113,20 +163,30 @@ def main():
     if args.web:
         if args.system:
             parser.error("--system does not work with --web; put it in the prompt")
-        if shutil.which("uv") is None:
-            warn("--web needs uv (https://docs.astral.sh/uv/), which runs ask-llm-web")
+        web = web_script()
+        if web is None:
             return 1
-        web = pathlib.Path(os.path.realpath(__file__)).with_name("ask-llm-web")
-        command = [str(web), args.web]
+        command = [web, args.web]
         command += ["--login"] if args.login else []
         command += ["--out", args.out] if args.out else []
-        os.execv(str(web), command + args.prompt)
+        os.execv(web, command + args.prompt)
     if args.login:
         parser.error("--login goes with --web")
 
     prompt = read_prompt(args.prompt)
     if not prompt:
         parser.error("no prompt: give it as arguments or on stdin")
+
+    # The default chain with no key at all cannot answer: the user chose the web
+    # pages for that case (ADR-0019). Never for --private, --model or ASK_LLM_CHAIN.
+    default_chain = not (args.private or args.model or os.environ.get("ASK_LLM_CHAIN"))
+    if default_chain and not has_api_key():
+        warn("no API key is set (llm keys set gemini|openrouter|openai); "
+             "using the ChatGPT and Gemini web pages")
+        # The pages have no system prompt; it goes above the prompt instead.
+        return ask_web_pages(f"{args.system}\n\n{prompt}" if args.system else prompt,
+                             args.out)
+
     if shutil.which("llm") is None:
         warn("llm is not installed; install.sh sets it up")
         return 1

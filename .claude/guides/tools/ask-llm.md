@@ -30,11 +30,14 @@ when a task fits; it does not wait to be asked.
   language, format, nothing cut off, nothing invented. Say in the reply which model wrote it.
   *Why: a smaller model fails quietly, and text handed back as Claude's own work is trusted
   as if Claude had checked it.*
-- **Web pages only when the user asks.** `ask-llm --web chatgpt|gemini` types the prompt into
-  the site in Chrome, with a login done once by hand (`ask-llm --web <site> --login`). It is
-  likely against both sites' terms and can get the account banned, and it breaks when the
-  page changes. Never use it as a fallback on your own.
-  *Why: the risk lands on the user's account, so the choice is the user's each time.*
+- **Web pages: by themselves only when no API key is set.** With no key for Gemini,
+  OpenRouter or OpenAI, plain `ask-llm` types the prompt into the ChatGPT page, then the
+  Gemini one, in Chrome, and says so on stderr. Both answer without a login; a login done
+  once by hand (`ask-llm --web <site> --login`) gives better models. Once any key is set,
+  use `ask-llm --web chatgpt|gemini` only when the user asks. Never send private text this
+  way, and never call `--web` on your own to get round a failing chain.
+  *Why: the user chose the pages over no answer when there is no key; automating them is
+  likely against the sites' terms, and the risk lands on the user's account.*
 - **Inside Claude, use a Haiku subagent.** For a simple task that needs project files or
   tools, start the `Agent` tool with `model: "haiku"` and a short brief instead of a remote
   model. No data leaves Anthropic, and it uses much less of the plan limits than the main model.

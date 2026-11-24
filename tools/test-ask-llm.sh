@@ -19,17 +19,35 @@ def check(name, condition, detail=""):
         failures.append(f"{name}: {detail}")
 
 
-# The stub answers per model from STUB_PLAN ({model: [exit, stdout, stderr]}) and
-# logs each call's model and stdin to STUB_LOG, one JSON line per call.
-# The stub runs on this Python: the PATH below holds no python3.
+# The llm stub lists the key names in STUB_KEYS for `llm keys list`, answers per
+# model from STUB_PLAN ({model: [exit, stdout, stderr]}) and logs each call's model
+# and stdin to STUB_LOG, one JSON line per call.
+# The stubs run on this Python: the PATH below holds no python3.
 STUB = f"""#!{sys.executable}
 import json, os, sys
+if sys.argv[1:2] == ["keys"]:
+    print(os.environ.get("STUB_KEYS") or "No keys found"); sys.exit(0)
 model = sys.argv[sys.argv.index("-m") + 1]
 prompt = sys.stdin.read()
 with open(os.environ["STUB_LOG"], "a") as log:
     log.write(json.dumps({{"model": model, "argv": sys.argv[1:], "stdin": prompt}}) + "\\n")
 code, out, err = json.loads(os.environ["STUB_PLAN"]).get(model, [1, "", "Unknown model"])
 sys.stdout.write(out); sys.stderr.write(err); sys.exit(code)
+"""
+# The uv stub stands in for `uv run --script ask-llm-web <site> [--out FILE]`: it
+# answers per site from STUB_WEB ({site: [exit, answer]}) and logs like the llm stub.
+UV_STUB = f"""#!{sys.executable}
+import json, os, sys
+args = sys.argv[sys.argv.index("--script") + 2:]
+site, prompt = args[0], sys.stdin.read()
+with open(os.environ["STUB_LOG"], "a") as log:
+    log.write(json.dumps({{"web": site, "argv": args, "stdin": prompt}}) + "\\n")
+code, answer = json.loads(os.environ.get("STUB_WEB", "{{}}")).get(site, [1, ""])
+if code == 0 and "--out" in args:
+    open(args[args.index("--out") + 1], "w").write(answer)
+elif code == 0:
+    print(answer)
+sys.exit(code)
 """
 
 
@@ -39,14 +57,15 @@ def run(root, args, plan=None, env=None, stdin=subprocess.DEVNULL, tools=("llm",
     for tool in ("llm", "uv"):
         path = stubs / tool
         if tool in tools:
-            path.write_text(STUB if tool == "llm" else "#!/bin/sh\nexit 0\n")
+            path.write_text(STUB if tool == "llm" else UV_STUB)
             path.chmod(0o755)
         elif path.exists():
             path.unlink()
     log = root / "calls.log"
     log.write_text("")
+    # A gemini key unless a case says otherwise, so the chain runs.
     full_env = {"PATH": str(stubs), "HOME": str(root), "STUB_LOG": str(log),
-                "STUB_PLAN": json.dumps(plan or {})}
+                "STUB_PLAN": json.dumps(plan or {}), "STUB_KEYS": "gemini"}
     full_env.update(env or {})
     done = subprocess.run([sys.executable, "-I", ASK, *args], env=full_env, stdin=stdin,
                           capture_output=True, text=True, timeout=60, check=False)
@@ -122,15 +141,43 @@ with tempfile.TemporaryDirectory() as tmp:
           and "must be a local ollama/" in done.stderr, (calls, done.stderr))
 
     # Missing tools and wrong combinations: a clear message, no traceback.
-    done, calls = run(root, ["hello"], tools=())
+    done, calls = run(root, ["hello"], env={"OPENAI_API_KEY": "x"}, tools=())
     check("no llm", done.returncode == 1 and "llm is not installed" in done.stderr,
           done.stderr)
     done, calls = run(root, ["--web", "gemini", "hello"], tools=())
-    check("web without uv", done.returncode == 1 and "--web needs uv" in done.stderr
+    check("web without uv", done.returncode == 1 and "need uv" in done.stderr
           and "Traceback" not in done.stderr, done.stderr)
     done, calls = run(root, ["--web", "gemini", "--system", "x", "hello"], tools=("uv",))
     check("web with system", done.returncode == 2
           and "--system does not work with --web" in done.stderr, done.stderr)
+    # No key for the default chain: the web pages, ChatGPT then Gemini, with the
+    # system prompt above the prompt; the chain is never called.
+    web = {"STUB_KEYS": "", "STUB_WEB": json.dumps({"gemini": [0, "from gemini"]})}
+    done, calls = run(root, ["--system", "be brief", "hello"], env=web,
+                      tools=("llm", "uv"))
+    check("no key web order", [c.get("web") for c in calls] == ["chatgpt", "gemini"], calls)
+    check("no key web answer", done.returncode == 0 and done.stdout == "from gemini\n"
+          and "answered by the gemini web page" in done.stderr, (done.stdout, done.stderr))
+    check("no key web prompt", calls and calls[0]["stdin"] == "be brief\n\nhello", calls)
+    out = root / "web.md"
+    done, calls = run(root, ["--out", str(out), "hello"], env=web, tools=("llm", "uv"))
+    check("no key web out", out.exists() and out.read_text() == "from gemini",
+          out.exists() and out.read_text())
+    done, calls = run(root, ["hello"], env={"STUB_KEYS": ""}, tools=("llm", "uv"))
+    check("no key no page", done.returncode == 1
+          and "no web page answered" in done.stderr, done.stderr)
+    done, calls = run(root, ["hello"], env={"STUB_KEYS": ""}, tools=())
+    check("no llm no uv", done.returncode == 1 and "need uv" in done.stderr, done.stderr)
+    # A key set only as a variable counts; --private, --model and ASK_LLM_CHAIN never
+    # go to the web.
+    for name, args, env in [
+            ("key in env", ["hello"], {"LLM_GEMINI_KEY": "x"}),
+            ("model", ["--model", "x", "hello"], {}),
+            ("private", ["--private", "hello"], {}),
+            ("env chain", ["hello"], {"ASK_LLM_CHAIN": "x"})]:
+        done, calls = run(root, args, env={**web, **env}, tools=("llm", "uv"))
+        check(f"no web with {name}", calls and not any("web" in c for c in calls), calls)
+
     done, calls = run(root, ["--login", "hello"])
     check("login without web", done.returncode == 2 and "--login goes with --web" in done.stderr,
           done.stderr)
