@@ -130,6 +130,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # --private: the local model only, never a remote one, even when it fails.
     done, calls = run(root, ["--private", "payslip"], {CHAIN[0]: [0, "remote\n", ""]})
     check("private local only", [c["model"] for c in calls] == ["ollama/llama3.2:3b"], calls)
+    check("private no thinking", "-o think false" in " ".join(calls[0]["argv"]), calls)
     check("private fail hint", done.returncode == 1
           and "ollama pull llama3.2:3b" in done.stderr, done.stderr)
     done, calls = run(root, ["--private", "payslip"],
@@ -139,6 +140,17 @@ with tempfile.TemporaryDirectory() as tmp:
                       {"ASK_LLM_LOCAL_MODEL": CHAIN[0]})
     check("private refuses remote model", done.returncode == 1 and not calls
           and "must be a local ollama/" in done.stderr, (calls, done.stderr))
+    # The model `ollama-pick --install` saved is used; ASK_LLM_LOCAL_MODEL still wins.
+    saved = pathlib.Path(root) / ".claude" / "ask-llm" / "local-model"
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_text("qwen3.5:4b\n")
+    done, calls = run(root, ["--private", "payslip"], {"ollama/qwen3.5:4b": [0, "q\n", ""]})
+    check("private saved model", [c["model"] for c in calls] == ["ollama/qwen3.5:4b"]
+          and done.stdout == "q\n", calls)
+    done, calls = run(root, ["--private", "payslip"], {"ollama/x:1b": [0, "x\n", ""]},
+                      {"ASK_LLM_LOCAL_MODEL": "ollama/x:1b"})
+    check("private env over saved", [c["model"] for c in calls] == ["ollama/x:1b"], calls)
+    saved.unlink()
 
     # Missing tools and wrong combinations: a clear message, no traceback.
     done, calls = run(root, ["hello"], env={"OPENAI_API_KEY": "x"}, tools=())

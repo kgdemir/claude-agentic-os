@@ -17,7 +17,7 @@ python3 -I -c 'import sys
 for path in sys.argv[1:]:
     with open(path, encoding="utf-8") as fh:
         compile(fh.read(), path, "exec")' .claude/hooks/*.py .claude/bin/lsp-setup \
-  .claude/bin/ask-llm .claude/bin/ask-llm-web
+  .claude/bin/ask-llm .claude/bin/ask-llm-web .claude/bin/ollama-pick
 
 step "settings values quoted in docs"
 tools/check-values.sh
@@ -30,6 +30,9 @@ tools/test-lsp-setup.sh
 
 step "ask-llm"
 tools/test-ask-llm.sh
+
+step "ollama-pick"
+tools/test-ollama-pick.sh
 
 step "guides"
 tools/check-guides.sh

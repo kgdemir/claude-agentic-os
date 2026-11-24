@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""List the local models that fit this machine, most used first, and install one.
+
+  ollama-pick [--top N] [--json]
+      Read the GPU memory and the free disk space, fetch the live model list
+      from ollama.com (most pulled first), drop models not updated within a year,
+      embedding-only and cloud-only ones, and print the biggest size of each model
+      that fits, with its pull count. Nothing is installed.
+  ollama-pick --install NAME
+      `ollama pull NAME`, then save NAME as the model `ask-llm --private` uses
+      (in ~/.claude/ask-llm/local-model; ASK_LLM_LOCAL_MODEL still wins).
+
+A model fits when its file takes at most FIT_SHARE of the GPU's memory (the rest
+holds the context), or of the RAM on a machine without an NVIDIA GPU, where it runs
+on the CPU or, on a Mac, in shared memory. The list is read from the site each run,
+so no model name is fixed here. Standard library only.
+"""
+
+import argparse
+import concurrent.futures
+import datetime
+import html
+import json
+import os
+import pathlib
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import urllib.request
+
+LIBRARY_URL = "https://ollama.com/library?sort=popular"
+TAGS_URL = "https://ollama.com/library/{name}/tags"
+USER_AGENT = "ollama-pick"
+HTTP_TIMEOUT = 20
+# Share of GPU memory (or RAM without a GPU) the model file may take.
+FIT_SHARE = 0.85
+CPU_RAM_SHARE = 0.5
+# macOS lets the GPU use about two thirds of the shared memory.
+MAC_GPU_SHARE = 0.65
+# Free disk kept after the download, in GB.
+DISK_SPARE_GB = 2
+# Models whose page was not updated for this many days are left out.
+MAX_AGE_DAYS = 365
+# How many of the most pulled models get their tags fetched.
+CANDIDATES = 40
+FETCH_WORKERS = 8
+DEFAULT_TOP = 5
+# Read by ask-llm --private when ASK_LLM_LOCAL_MODEL is not set.
+CHOICE_FILE = pathlib.Path.home() / ".claude" / "ask-llm" / "local-model"
+# "cloud" only means a cloud size exists too; cloud tags have "-cloud" and are skipped.
+SKIP_CAPABILITIES = {"embedding"}
+# Models made for one job (code, OCR, medicine, translation, safety filters,
+# embeddings), not general text: ask-llm never writes code, and the rest answer badly.
+SPECIAL_PURPOSE = re.compile(r"embed|coder|code|ocr|med|translate|guard|math|minilm|bge")
+# Tags that name a quantization instead of a size, such as bf16 or q8_0.
+QUANT_TAG = re.compile(r"(bf|fp)\d+|q\d.*|mlx|mxfp\d|nvfp\d|qat")
+UNITS = {"K": 1e3, "M": 1e6, "B": 1e9, "KB": 1e-6, "MB": 1e-3, "GB": 1.0, "TB": 1e3}
+
+
+def warn(message):
+    print(f"ollama-pick: {message}", file=sys.stderr)
+
+
+def fetch(url):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+        return response.read().decode("utf-8", "replace")
+
+
+def number(text):
+    """'121.4M' -> 121400000.0, '5.2GB' -> 5.2 (GB)."""
+    match = re.fullmatch(r"([\d.]+)\s*([A-Z]*)", text.strip())
+    if not match:
+        raise ValueError(f"not a number: {text!r}")
+    return float(match.group(1)) * UNITS.get(match.group(2), 1.0)
+
+
+def parse_library(page):
+    """[{name, pulls, updated, capabilities}] in page order (most pulled first)."""
+    models = []
+    for block in re.findall(r'<li[^>]*>\s*<a href="/library/[^"]+".*?</li>', page, re.S):
+        name = re.search(r'href="/library/([^"]+)"', block).group(1)
+        chips = re.findall(r'<span\s+class="inline-flex[^"]*">([^<]+)</span>', block)
+        pulls = re.search(r"<span\s*>([\d.]+[KMB]?)</span>\s*<span[^>]*>&nbsp;Pulls", block)
+        stamp = re.search(r'title="([A-Z][a-z]{2} \d{1,2}, \d{4}) [^"]*UTC"', block)
+        models.append({
+            "name": name,
+            "pulls": number(pulls.group(1)) if pulls else 0.0,
+            "updated": (datetime.datetime.strptime(stamp.group(1), "%b %d, %Y").date()
+                        if stamp else None),
+            # Size chips like "8b" are not capabilities.
+            "capabilities": {c.strip() for c in chips if not re.fullmatch(r"[\d.x]+[bmk]|e\d+b", c.strip())},
+        })
+    return models
+
+
+def parse_tags(page, name):
+    """{tag: size in GB} for the default tags: no quantization suffix, not 'latest'."""
+    sizes = {}
+    # A row reads "<digest> • 5.2GB • ..." or "• 6.6GB - 9.5GB •" (file size, then the
+    # memory it uses at its full context); the file size is used for both checks.
+    # (?!href=) keeps a row without a size (a cloud tag) from taking the next row's.
+    pattern = (rf'href="/library/{re.escape(name)}:([^"]+)" class="md:hidden(?:(?!href=).)*?'
+               r'•\s*([\d.]+\s*[KMGT]B)(?:\s*-\s*[\d.]+\s*[KMGT]B)?\s*•')
+    for tag, size in re.findall(pattern, page, re.S):
+        if "-" in tag or tag == "latest" or QUANT_TAG.fullmatch(tag):
+            continue
+        sizes[tag] = number(size)
+    return sizes
+
+
+def memory_budget():
+    """(GB a model file may take, where it runs)."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total,name", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=HTTP_TIMEOUT, check=True).stdout
+        total_mib, gpu = out.splitlines()[0].split(",", 1)
+        return float(total_mib) / 1024 * FIT_SHARE, f"GPU {gpu.strip()}, {float(total_mib) / 1024:.1f} GB"
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+        reason = exc
+    ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3
+    if platform.system() == "Darwin":
+        return ram * MAC_GPU_SHARE * FIT_SHARE, f"Mac shared memory, {ram:.0f} GB"
+    warn(f"no NVIDIA GPU found ({reason}); sizing for the CPU, which is slow")
+    return ram * CPU_RAM_SHARE, f"CPU, {ram:.0f} GB RAM"
+
+
+def free_disk_gb():
+    models = pathlib.Path(os.environ.get("OLLAMA_MODELS") or pathlib.Path.home() / ".ollama")
+    while not models.exists():
+        models = models.parent
+    return shutil.disk_usage(models).free / 1024**3
+
+
+def installed():
+    try:
+        out = subprocess.run(["ollama", "list"], capture_output=True, text=True,
+                             timeout=HTTP_TIMEOUT, check=True).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        warn(f"`ollama list` failed ({exc}); installed models are not marked")
+        return set()
+    return {line.split()[0] for line in out.splitlines()[1:] if line.strip()}
+
+
+def pick(library, tags_of, budget, disk, today, top):
+    fresh = [m for m in library
+             if not (m["capabilities"] & SKIP_CAPABILITIES)
+             and not SPECIAL_PURPOSE.search(m["name"])
+             and m["updated"] and (today - m["updated"]).days <= MAX_AGE_DAYS][:CANDIDATES]
+    with concurrent.futures.ThreadPoolExecutor(FETCH_WORKERS) as pool:
+        all_tags = list(pool.map(tags_of, [m["name"] for m in fresh]))
+    picks = []
+    for model, tags in zip(fresh, all_tags):
+        fits = {t: s for t, s in tags.items() if s <= budget and s + DISK_SPARE_GB <= disk}
+        if fits:
+            tag = max(fits, key=fits.get)
+            picks.append({"model": f"{model['name']}:{tag}", "size_gb": fits[tag],
+                          "pulls": model["pulls"], "updated": model["updated"].isoformat(),
+                          "capabilities": sorted(model["capabilities"])})
+    return picks[:top]
+
+
+def tags_fetcher(name):
+    try:
+        return parse_tags(fetch(TAGS_URL.format(name=name)), name)
+    except OSError as exc:
+        warn(f"{name}: tags not read ({exc})")
+        return {}
+
+
+def install(name):
+    if subprocess.run(["ollama", "pull", name]).returncode != 0:
+        warn(f"`ollama pull {name}` failed; is `ollama serve` running?")
+        return 1
+    CHOICE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CHOICE_FILE.write_text(name + "\n")
+    print(f"ask-llm --private now uses {name} ({CHOICE_FILE})")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--install", metavar="NAME")
+    parser.add_argument("--top", type=int, default=DEFAULT_TOP)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    if args.install:
+        return install(args.install)
+
+    budget, where = memory_budget()
+    disk = free_disk_gb()
+    try:
+        library = parse_library(fetch(LIBRARY_URL))
+    except OSError as exc:
+        warn(f"could not read {LIBRARY_URL} ({exc})")
+        return 1
+    if not library:
+        warn(f"no models found on {LIBRARY_URL}: the page changed (update parse_library)")
+        return 1
+    picks = pick(library, tags_fetcher, budget, disk, datetime.date.today(), args.top)
+    have = installed()
+    current = os.environ.get("ASK_LLM_LOCAL_MODEL", "").removeprefix("ollama/") or (
+        CHOICE_FILE.read_text().strip() if CHOICE_FILE.exists() else "")
+    for p in picks:
+        p["installed"] = p["model"] in have
+        p["in_use"] = p["model"] == current
+    if args.json:
+        print(json.dumps({"runs_on": where, "fit_gb": round(budget, 1),
+                          "free_disk_gb": round(disk, 1), "models": picks}, indent=2))
+        return 0
+    print(f"{where}; model files up to {budget:.1f} GB fit, {disk:.0f} GB disk free")
+    if not picks:
+        print("no current model fits")
+    for p in picks:
+        mark = " (in use)" if p["in_use"] else " (installed)" if p["installed"] else ""
+        print(f"  {p['model']:<28} {p['size_gb']:>5.1f} GB  {p['pulls'] / 1e6:>7.1f}M pulls  "
+              f"updated {p['updated']}{mark}")
+    print("install one with: ollama-pick --install <model>")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

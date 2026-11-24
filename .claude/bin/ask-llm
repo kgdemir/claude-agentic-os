@@ -24,7 +24,8 @@ can be sent with `ask-llm "Translate to English:" < notes.md`.
 
 Keys are set once with `llm keys set gemini`, `llm keys set openrouter` and
 `llm keys set openai`; they stay in llm's own key file. Models can be changed
-with ASK_LLM_CHAIN (space-separated llm model ids) and ASK_LLM_LOCAL_MODEL.
+with ASK_LLM_CHAIN (space-separated llm model ids) and ASK_LLM_LOCAL_MODEL; without
+the latter, --private uses the model `ollama-pick --install` saved, if any.
 
 Standard library only; the API calls go through the `llm` CLI.
 """
@@ -49,6 +50,8 @@ DEFAULT_CHAIN = (
 # llm-ollama names local models ollama/<name as Ollama knows it>.
 OLLAMA_PREFIX = "ollama/"
 DEFAULT_LOCAL_MODEL = OLLAMA_PREFIX + "llama3.2:3b"
+# Written by `ollama-pick --install`: the Ollama name of the chosen local model.
+LOCAL_MODEL_FILE = pathlib.Path.home() / ".claude" / "ask-llm" / "local-model"
 # Seconds one model may take before the next one in the chain is tried.
 MODEL_TIMEOUT = 300
 WEB_SITES = ("chatgpt", "gemini")
@@ -79,6 +82,11 @@ def read_prompt(words):
 def call_llm(model, prompt, system):
     """The answer from one model, or None with the reason printed."""
     command = ["llm", "--no-log", "-m", model]
+    if model.startswith(OLLAMA_PREFIX):
+        # Thinking models (qwen3.5 and others) otherwise write their reasoning into
+        # the answer, or spend the whole reply on it and return nothing. Models
+        # without thinking accept the option too.
+        command += ["-o", "think", "false"]
     if system:
         command += ["-s", system]
     try:
@@ -96,6 +104,15 @@ def call_llm(model, prompt, system):
         warn(f"{model}: empty answer")
         return None
     return done.stdout
+
+
+def saved_local_model():
+    """The model `ollama-pick --install` chose, as an llm model id, or None."""
+    try:
+        name = LOCAL_MODEL_FILE.read_text().strip()
+    except FileNotFoundError:
+        return None
+    return OLLAMA_PREFIX + name if name else None
 
 
 def has_api_key():
@@ -192,7 +209,7 @@ def main():
         return 1
 
     if args.private:
-        model = os.environ.get("ASK_LLM_LOCAL_MODEL") or DEFAULT_LOCAL_MODEL
+        model = os.environ.get("ASK_LLM_LOCAL_MODEL") or saved_local_model() or DEFAULT_LOCAL_MODEL
         if not model.startswith(OLLAMA_PREFIX):
             # A remote model here would send the private text off the machine.
             warn(f"ASK_LLM_LOCAL_MODEL must be a local {OLLAMA_PREFIX}<name> model, "

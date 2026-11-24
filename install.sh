@@ -375,8 +375,9 @@ if [ "$WITH_LAUNCHER" = "yes" ]; then
   else
     mkdir -p "$DEST/bin"
     # lsp-setup sets up LSP plugins and servers for the project runclaude opens;
-    # ask-llm and ask-llm-web hand simple text tasks to other models.
-    for BIN in runclaude lsp-setup ask-llm ask-llm-web; do
+    # ask-llm and ask-llm-web hand simple text tasks to other models; ollama-pick
+    # finds the local model that fits this machine.
+    for BIN in runclaude lsp-setup ask-llm ask-llm-web ollama-pick; do
       if [ -e "$DEST/bin/$BIN" ] && ! cmp -s "$SRC_DIR/.claude/bin/$BIN" "$DEST/bin/$BIN"; then
         cp -p "$DEST/bin/$BIN" "$DEST/bin/$BIN.backup-$STAMP"
         echo "    backed up  $DEST/bin/$BIN.backup-$STAMP"
@@ -749,6 +750,23 @@ if [ "$WITH_LAUNCHER" = "yes" ]; then
       else
         echo "!! llm install failed; ask-llm works once it is in place." >&2
       fi
+    fi
+  fi
+  # A local model for ask-llm --private, sized to this machine's GPU and disk from
+  # ollama.com's live list. Only asked at a terminal: a model is gigabytes, so -y
+  # and runs without a terminal only print the command.
+  if command -v ollama >/dev/null 2>&1; then
+    echo
+    if [ -n "$ASSUME_YES" ] || [ ! -t 0 ]; then
+      echo "    Pick a local model for ask-llm --private later with: $DEST/bin/ollama-pick"
+    elif "$DEST/bin/ollama-pick" --top 3; then
+      MODEL_CHOICE="$(ask 'Local model to install (empty to skip)' '')"
+      if [ -n "$MODEL_CHOICE" ]; then
+        "$DEST/bin/ollama-pick" --install "$MODEL_CHOICE" \
+          || echo "!! Model not installed; try again with: $DEST/bin/ollama-pick --install $MODEL_CHOICE" >&2
+      fi
+    else
+      echo "!! ollama-pick could not list models; run it again later: $DEST/bin/ollama-pick" >&2
     fi
   fi
 fi

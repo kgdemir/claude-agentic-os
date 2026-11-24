@@ -18,10 +18,23 @@ when a task fits; it does not wait to be asked.
   comes only from output Claude does not have to generate or read in full.*
 - **Private text goes to `--private` or nowhere.** Payslips, bank and card data, customer or
   personal data, secrets, keys, connection strings and private source code go only to the
-  local model (`ask-llm --private`), which never falls back to a remote one. When the local
-  model is not running, do the task in Claude or ask the user; never drop `--private` to get
-  an answer.
-  *Why: free tiers may log prompts and train on them; text sent there cannot be taken back.*
+  local model (`ask-llm --private`), which never falls back to a remote one. Private is a
+  reason to use `--private`, not to skip handing off: when a private task fits the rules
+  above, try it first. When the local server is down (`ollama list` fails), start
+  `ollama serve` in the background, run the task, and stop the server again; if it still
+  fails, do the task in Claude and say why in the reply. Never drop `--private` to get an
+  answer.
+  *Why: free tiers may log prompts and train on them; text sent there cannot be taken back.
+  A session that saw "private" and stopped there spent the plan on work the local model
+  could do.*
+- **Offer a better local model once per session.** Before the first `--private` task, run
+  `~/.claude/bin/ollama-pick --top 3`: it reads the GPU memory and free disk, and lists the
+  most pulled models on ollama.com updated within a year that fit. When none of them is
+  marked `(in use)`, offer them through `AskUserQuestion` with their size, plus "keep the
+  current one". Only after a yes run `ollama-pick --install <model>`, which pulls it and
+  makes it the `--private` model. Never pull without asking.
+  *Why: the list changes every few months and a bigger model that fits answers much better,
+  but a pull is gigabytes of the user's disk and network.*
 - **Default chain: Gemini, then OpenRouter's free model, then OpenAI.** `ask-llm` moves to the
   next one when a key is missing or a free limit is reached, and names the model that
   answered on stderr. `--model <id>` picks one; `llm models` lists the ids.
