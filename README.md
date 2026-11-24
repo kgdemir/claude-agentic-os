@@ -40,6 +40,7 @@ cd claude-agentic-os
 - [What the installer changes outside ~/.claude](#what-the-installer-changes-outside-claude)
 - [The statusline](#the-statusline)
 - [The optional launcher](#the-optional-launcher)
+- [Handing text work to other models](#handing-text-work-to-other-models)
 - [Adapting the rules](#adapting-the-rules)
 - [Uninstalling and rolling back](#uninstalling-and-rolling-back)
 - [Security](#security)
@@ -66,7 +67,7 @@ holding them.
 | Piece | What it does |
 | --- | --- |
 | **Core rules** (`~/.claude/CLAUDE.md` + `guides/core/`) | loaded in every session: verification, diagnosis, background work, git hygiene, documentation policy, code quality, decision records, safety (secrets, destructive commands, migrations, dependencies) |
-| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, ffmpeg, PDF export, realtime media, AI models, which skill or review tool fits a task, plugin-specific rules |
+| **Add-on rules** (`guides/stacks/`, `tools/`, `features/`, `plugins/`) | read only when the project needs them: .NET, EF Core, ASP.NET Core, .NET and front-end testing, Windows desktop, Python, TypeScript, React, ESLint, Vite, SQL Server, Docker, Redis, GitHub Actions, dependency updates, auth, observability, privacy, testing strategy, performance, caching, end-user guides, architecture, API design, background jobs, resilience, database migrations, i18n, accessibility, web security, releases, child processes, handing plain text to other models, ffmpeg, PDF export, realtime media, AI models, which skill or review tool fits a task, plugin-specific rules |
 | **Plugin set** | caveman, context-mode, drywall, ECC, memsearch — installed, enabled, auto-updating — plus 17 named plugins from Anthropic's official marketplace |
 | **Security-audit skill** | Cloudflare's `security-audit` skill in `~/.claude/skills/`, installed with the `skills` CLI |
 | **Per-project memory** | memsearch, with a separate database per project so facts never cross repositories |
@@ -74,6 +75,7 @@ holding them.
 | **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
 | **Hooks** (warn; one blocks near a usage limit) | remind Claude: subagent briefs without `Goal:`/`Files:`/`Done:`, shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff), language servers that cannot start, and text searches for a code symbol that the `LSP` tool should answer (ADR-0016); stop a new subagent near the 5-hour or weekly limit (ADR-0015); log memory, guide, skill and agent use, to find what is worth grouping or turning off (ADR-0012) |
 | **Launcher** (optional) | `runclaude <project>` — installs missing tooling, prepares the venv, fast-forwards a clean default branch, opens Claude |
+| **ask-llm** (with the launcher) | hands plain text work (drafts, translation, summaries) to Gemini, OpenRouter's free models, OpenAI or a local Ollama model, never code (ADR-0019) |
 
 ## Install
 
@@ -198,6 +200,8 @@ only when `settings.json` does not already carry them:
   project-claude-template.md     starting point for a project CLAUDE.md
 ~/.claude/bin/
   runclaude                      optional launcher (only with --with-launcher)
+  ask-llm                        text tasks to other models (with the launcher)
+  ask-llm-web                    the same through the ChatGPT or Gemini web page
 ~/.claude/hooks/
   check-agent-brief.py           PreToolUse hook on the Agent tool: warns on a
                                  subagent brief without Goal:/Files:/Done:
@@ -394,6 +398,40 @@ will and will not do:
 
 Skip it if you would rather manage your own tooling; the rules work without it.
 
+## Handing text work to other models
+
+With the launcher, `~/.claude/bin/ask-llm` lets Claude hand plain text work to a
+cheaper model and keep its own plan usage for the code (ADR-0019). The add-on rule
+`guides/tools/ask-llm.md` tells Claude when: a draft, translation, rewording or
+summary that needs no project knowledge, big enough to write straight to a file.
+It is **never** used for code, tests, scripts, commands, configuration or reviews.
+
+```bash
+ask-llm "Translate to English:" < notes.md          # Gemini, then OpenRouter free, then OpenAI
+ask-llm --out draft.md "Write release notes for:" < changes.txt
+ask-llm --private "Summarise:" < payslip.txt         # local Ollama only, never a remote model
+ask-llm --web chatgpt "Reword this politely: ..."   # the ChatGPT or Gemini web page
+```
+
+- **Default chain:** `gemini-3.5-flash`, `openrouter/openrouter/free` (OpenRouter's
+  router over its free models), `gpt-5.4-mini`. A model with no key, a used-up free
+  limit, an error or an empty answer is skipped, and the one that answered is named.
+  Change it with `ASK_LLM_CHAIN` (space-separated `llm` model ids).
+- **Keys:** the installer offers the `llm` CLI 0.38 with its Gemini, Ollama and
+  OpenRouter plugins (`uv tool install`, versions pinned in `install.sh`). Set the
+  keys you have once: `llm keys set gemini`, `llm keys set openrouter`,
+  `llm keys set openai`. They stay in `llm`'s own key file.
+- **`--private`:** only a local `ollama/<name>` model (default `ollama/llama3.2:3b`,
+  small enough for a 4 GB GPU; change it with `ASK_LLM_LOCAL_MODEL`). It refuses any
+  other model, so private text never leaves the machine. Needs `ollama serve` and
+  `ollama pull llama3.2:3b`.
+- **`--web chatgpt|gemini`:** runs `ask-llm-web`, which types the prompt into the
+  site's page in Chrome with Playwright (through `uv run --script`) and returns the
+  answer. Both sites answer guests; `--login` keeps a login in
+  `~/.claude/ask-llm-web/<site>` for better models. Automating these pages is likely
+  against both sites' terms and can get an account banned, and the pages change
+  without notice, so Claude uses it only when you ask.
+
 ## Adapting the rules
 
 The guides are ordinary Markdown, meant to be edited. Three things to know before
@@ -437,6 +475,7 @@ report a problem.
 | --- | --- |
 | `tools/check.sh` | every gate before a commit; CI (`.github/workflows/ci.yml`) runs the same script |
 | `tools/test-hooks.sh` | feeds sample events to the hooks; each warn or log case has a silent twin, and the usage reports are checked |
+| `tools/test-ask-llm.sh` | runs `ask-llm` against a stub `llm` (chain, empty answers, `--private`, missing tools) and `ask-llm-web`'s answer wait against a fake page |
 | `tools/check-guides.sh` | each add-on rule has a `*Cost:*`/`*Why:*` line, pack paths resolve, each add-on has a trigger row, YAML blocks parse, no project name from the local `tools/leak-names.local` appears |
 | `tools/check-values.sh` | settings values quoted in the docs match `install.sh` |
 | `tools/sync-live.sh [--dry-run]` | copies changed rules, templates and hooks into your live `~/.claude` with backups, using your install answers from the gitignored `tools/sync-live.local`; never edits `settings.json` and reports hooks still to register with `./install.sh` |

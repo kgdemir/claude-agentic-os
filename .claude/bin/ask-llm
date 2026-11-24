@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Send a simple text task to a model other than Claude and print the answer.
+
+Text only: never code, tests, scripts, commands or configuration
+(guides/tools/ask-llm.md).
+
+  ask-llm [--private] [--model M] [--system S] [--out FILE] [PROMPT...]
+  ask-llm --web chatgpt|gemini [--login] [--out FILE] [PROMPT...]
+
+The prompt is the arguments; text piped on stdin is added below them, so a file
+can be sent with `ask-llm "Translate to English:" < notes.md`.
+
+  --private   only the local Ollama model; the text never leaves the machine.
+  (default)   each model in the chain, in order, moving on when one fails (no key,
+              free limit reached, network): Gemini, OpenRouter's free model, OpenAI.
+  --model M   that one model only, no chain.
+  --out FILE  write the answer to FILE and print one line, so a long answer does
+              not have to be read back in full.
+  --web SITE  type the prompt into the site's web page in Chrome (ask-llm-web).
+              Automating these pages is likely against the sites' terms and can
+              get the account banned; use it only when the user asks for it.
+
+Keys are set once with `llm keys set gemini`, `llm keys set openrouter` and
+`llm keys set openai`; they stay in llm's own key file. Models can be changed
+with ASK_LLM_CHAIN (space-separated llm model ids) and ASK_LLM_LOCAL_MODEL.
+
+Standard library only; the API calls go through the `llm` CLI.
+"""
+
+import argparse
+import os
+import pathlib
+import shutil
+import stat
+import subprocess
+import sys
+
+# llm model ids, cheapest that does the job first. Free tiers change their limits
+# and model names; override with ASK_LLM_CHAIN instead of editing this file.
+DEFAULT_CHAIN = (
+    "gemini-3.5-flash",
+    # OpenRouter's router that picks one of its free models for each request.
+    "openrouter/openrouter/free",
+    "gpt-5.4-mini",
+)
+# Small enough for a 4 GB GPU; bigger local models run on the CPU and are slow.
+# llm-ollama names local models ollama/<name as Ollama knows it>.
+OLLAMA_PREFIX = "ollama/"
+DEFAULT_LOCAL_MODEL = OLLAMA_PREFIX + "llama3.2:3b"
+# Seconds one model may take before the next one in the chain is tried.
+MODEL_TIMEOUT = 300
+WEB_SITES = ("chatgpt", "gemini")
+
+
+def warn(text):
+    print(f"ask-llm: {text}", file=sys.stderr, flush=True)
+
+
+def read_prompt(words):
+    parts = [" ".join(words)] if words else []
+    # Only a pipe or a file: a caller whose stdin is some other open stream that
+    # never ends (a socket, a terminal-less tool shell) would block read() forever.
+    mode = os.fstat(sys.stdin.fileno()).st_mode
+    if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
+        piped = sys.stdin.read()
+        if piped.strip():
+            parts.append(piped)
+    return "\n\n".join(parts).strip()
+
+
+def call_llm(model, prompt, system):
+    """The answer from one model, or None with the reason printed."""
+    command = ["llm", "--no-log", "-m", model]
+    if system:
+        command += ["-s", system]
+    try:
+        # The prompt goes on stdin, so it never shows in the process list.
+        done = subprocess.run(command, input=prompt, text=True, capture_output=True,
+                              timeout=MODEL_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired:
+        warn(f"{model}: no answer after {MODEL_TIMEOUT}s")
+        return None
+    if done.returncode != 0:
+        reason = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
+        warn(f"{model}: {reason}")
+        return None
+    if not done.stdout.strip():
+        warn(f"{model}: empty answer")
+        return None
+    return done.stdout
+
+
+def deliver(answer, out):
+    if out:
+        pathlib.Path(out).write_text(answer)
+        print(f"wrote {len(answer)} characters to {out}")
+    else:
+        sys.stdout.write(answer if answer.endswith("\n") else answer + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("prompt", nargs="*")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--private", action="store_true")
+    target.add_argument("--model")
+    target.add_argument("--web", choices=WEB_SITES)
+    parser.add_argument("--system")
+    parser.add_argument("--out")
+    parser.add_argument("--login", action="store_true")
+    args = parser.parse_args()
+
+    if args.web:
+        if args.system:
+            parser.error("--system does not work with --web; put it in the prompt")
+        if shutil.which("uv") is None:
+            warn("--web needs uv (https://docs.astral.sh/uv/), which runs ask-llm-web")
+            return 1
+        web = pathlib.Path(os.path.realpath(__file__)).with_name("ask-llm-web")
+        command = [str(web), args.web]
+        command += ["--login"] if args.login else []
+        command += ["--out", args.out] if args.out else []
+        os.execv(str(web), command + args.prompt)
+    if args.login:
+        parser.error("--login goes with --web")
+
+    prompt = read_prompt(args.prompt)
+    if not prompt:
+        parser.error("no prompt: give it as arguments or on stdin")
+    if shutil.which("llm") is None:
+        warn("llm is not installed; install.sh sets it up")
+        return 1
+
+    if args.private:
+        model = os.environ.get("ASK_LLM_LOCAL_MODEL") or DEFAULT_LOCAL_MODEL
+        if not model.startswith(OLLAMA_PREFIX):
+            # A remote model here would send the private text off the machine.
+            warn(f"ASK_LLM_LOCAL_MODEL must be a local {OLLAMA_PREFIX}<name> model, "
+                 f"not {model}")
+            return 1
+        answer = call_llm(model, prompt, args.system)
+        if answer is None:
+            # Never falls back to a remote model: private text stays here.
+            warn(f"the local model did not answer; start it with `ollama serve` "
+                 f"and `ollama pull {model.removeprefix(OLLAMA_PREFIX)}`")
+            return 1
+        deliver(answer, args.out)
+        return 0
+
+    chain = [args.model] if args.model else (
+        os.environ.get("ASK_LLM_CHAIN", "").split() or list(DEFAULT_CHAIN))
+    for model in chain:
+        answer = call_llm(model, prompt, args.system)
+        if answer is not None:
+            if len(chain) > 1:
+                warn(f"answered by {model}")
+            deliver(answer, args.out)
+            return 0
+    warn("no model answered; check the keys with `llm keys list`")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

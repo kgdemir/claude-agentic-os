@@ -51,6 +51,7 @@ with the Read tool before working on that part, and follow it.
 | Project has package dependencies and a remote repository | `~/.claude/guides/tools/dependency-updates.md` |
 | Project built with Vite | `~/.claude/guides/tools/vite.md` |
 | Code starts child processes, any language | `~/.claude/guides/tools/child-processes.md` |
+| Plain text work (drafts, rewording, translation, summaries, many similar texts) | `~/.claude/guides/tools/ask-llm.md` |
 | Project calls `ffmpeg` or `ffprobe` | `~/.claude/guides/tools/ffmpeg.md` |
 | Project exports Markdown to PDF | `~/.claude/guides/tools/pdf-export.md` |
 | Realtime messaging or live audio/video (WebSocket, SignalR, WebRTC, SFU) | `~/.claude/guides/features/realtime-media.md` |

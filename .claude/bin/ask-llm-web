@@ -1,0 +1,185 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["playwright==1.65.2"]
+# ///
+"""Type a prompt into the ChatGPT or Gemini web page and print the answer.
+
+  ask-llm-web chatgpt|gemini --login
+      Optional: both sites answer guests without a login. A login gives better
+      models and higher limits. This opens the site in a browser window with its
+      own profile; log in by hand, then close the window. The login is kept.
+  ask-llm-web chatgpt|gemini [--out FILE] [--headless] [PROMPT...]
+      Send one prompt in a new chat and print the answer (stdin is added below
+      the arguments, as in ask-llm).
+
+Automating these pages is likely against both sites' terms of service and can get
+the account banned; the APIs behind ask-llm are the supported way. The pages also
+change without notice: when a selector below stops matching, update SITES.
+
+Runs through `uv run --script`, which fetches Playwright on first use. It drives
+the installed Google Chrome when there is one, else Playwright's Chromium (install
+it once with `uv run --with playwright==1.65.2 playwright install chromium`).
+"""
+
+import argparse
+import os
+import pathlib
+import shutil
+import stat
+import sys
+import time
+
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import sync_playwright
+
+PROFILES = pathlib.Path.home() / ".claude" / "ask-llm-web"
+SITES = {
+    "chatgpt": {
+        "url": "https://chatgpt.com/",
+        # Each value lists the logged-in page first, then the guest page (no login
+        # needed), which has a different layout.
+        "input": "#prompt-textarea, textarea",
+        "answer": '[data-message-author-role="assistant"], '
+                  '[data-message-role="assistant"] [data-assistant-markdown-root]',
+        # The guest page marks a finished answer with data-message-complete; the
+        # stop button's label is in the page's language, so it is not matched.
+        "busy": '[data-testid="stop-button"], '
+                '[data-message-role="assistant"]:not([data-message-complete])',
+        # Parts inside an answer that are not the answer: the guest page puts some
+        # answers in a "writing block" with a header label and metadata.
+        "skip": '[data-conversation-part="header"], [data-conversation-part="metadata"], '
+                '[role="status"]',
+    },
+    "gemini": {
+        "url": "https://gemini.google.com/app",
+        "input": 'rich-textarea div[contenteditable="true"]',
+        "answer": "model-response message-content",
+        # aria-busy works in any page language; the Stop button's label does not.
+        "busy": 'model-response [aria-busy="true"], button[aria-label*="Stop"]',
+        # Suggestion buttons and copy boxes: the page marks them itself, and its own
+        # copy button leaves them out too.
+        "skip": "[hide-from-message-actions]",
+    },
+}
+# Milliseconds to wait for the page's prompt box; past that the login has expired.
+INPUT_TIMEOUT_MS = 30_000
+# Seconds an answer may take in total, and how long it must stay unchanged to count
+# as finished (the stop button alone is not reliable on either site).
+ANSWER_TIMEOUT = 300
+SETTLE_SECONDS = 3
+POLL_SECONDS = 0.5
+# Hides the spec's "skip" parts while reading the answer's innerText (a detached
+# copy would lose the line breaks, which need the page's layout).
+VISIBLE_TEXT_JS = """(element, skip) => {
+    const parts = skip ? [...element.querySelectorAll(skip)] : [];
+    const display = parts.map(part => part.style.display);
+    parts.forEach(part => { part.style.display = "none"; });
+    const text = element.innerText;
+    parts.forEach((part, i) => { part.style.display = display[i]; });
+    return text;
+}"""
+
+
+def read_prompt(words):
+    parts = [" ".join(words)] if words else []
+    # Only a pipe or a file: a caller whose stdin is some other open stream that
+    # never ends (a socket, a terminal-less tool shell) would block read() forever.
+    mode = os.fstat(sys.stdin.fileno()).st_mode
+    if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
+        piped = sys.stdin.read()
+        if piped.strip():
+            parts.append(piped)
+    return "\n\n".join(parts).strip()
+
+
+def open_context(playwright, site, headless):
+    profile = PROFILES / site
+    profile.mkdir(parents=True, exist_ok=True)
+    channel = "chrome" if shutil.which("google-chrome") else None
+    return playwright.chromium.launch_persistent_context(
+        str(profile), channel=channel, headless=headless, no_viewport=True)
+
+
+def login(playwright, site):
+    context = open_context(playwright, site, headless=False)
+    page = context.pages[0] if context.pages else context.new_page()
+    page.goto(SITES[site]["url"])
+    print(f"Log in to {site} in the browser window, then close it.", file=sys.stderr)
+    page.wait_for_event("close", timeout=0)
+    context.close()
+
+
+def wait_for_answer(page, spec, before):
+    """Text of the new answer once it has stopped changing."""
+    deadline = time.monotonic() + ANSWER_TIMEOUT
+    answers = page.locator(spec["answer"])
+    last, stable_since = None, None
+    while time.monotonic() < deadline:
+        time.sleep(POLL_SECONDS)
+        if answers.count() <= before or page.locator(spec["busy"]).count():
+            last, stable_since = None, None
+            continue
+        text = answers.last.evaluate(VISIBLE_TEXT_JS, spec.get("skip", "")).strip()
+        if text and text == last:
+            if time.monotonic() - stable_since >= SETTLE_SECONDS:
+                return text
+        else:
+            last, stable_since = text, time.monotonic()
+    raise TimeoutError(f"no finished answer after {ANSWER_TIMEOUT}s")
+
+
+def ask(playwright, site, prompt, headless):
+    spec = SITES[site]
+    context = open_context(playwright, site, headless)
+    try:
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(spec["url"])
+        # The first visible match: a page can keep a hidden textarea before the real box.
+        box = page.locator(spec["input"]).filter(visible=True).first
+        try:
+            box.wait_for(timeout=INPUT_TIMEOUT_MS)
+        except PlaywrightError as exc:
+            raise RuntimeError(f"no prompt box on {spec['url']}: the page changed (update "
+                               f"SITES) or the login expired (`ask-llm --web {site} "
+                               f"--login`) ({exc})") from exc
+        before = page.locator(spec["answer"]).count()
+        box.click()
+        page.keyboard.insert_text(prompt)
+        page.keyboard.press("Enter")
+        return wait_for_answer(page, spec, before)
+    finally:
+        context.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("site", choices=sorted(SITES))
+    parser.add_argument("prompt", nargs="*")
+    parser.add_argument("--login", action="store_true")
+    parser.add_argument("--out")
+    parser.add_argument("--headless", action="store_true")
+    args = parser.parse_args()
+
+    with sync_playwright() as playwright:
+        if args.login:
+            login(playwright, args.site)
+            return 0
+        prompt = read_prompt(args.prompt)
+        if not prompt:
+            parser.error("no prompt: give it as arguments or on stdin")
+        try:
+            answer = ask(playwright, args.site, prompt, args.headless)
+        except (PlaywrightError, RuntimeError, TimeoutError) as exc:
+            print(f"ask-llm-web: {args.site}: {exc}", file=sys.stderr)
+            return 1
+    if args.out:
+        pathlib.Path(args.out).write_text(answer + "\n")
+        print(f"wrote {len(answer)} characters to {args.out}")
+    else:
+        print(answer)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

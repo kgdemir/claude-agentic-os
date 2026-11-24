@@ -365,8 +365,9 @@ if [ "$WITH_LAUNCHER" = "yes" ]; then
     echo "!! The launcher supports macOS and Linux only; skipping on $OS_NAME." >&2
   else
     mkdir -p "$DEST/bin"
-    # lsp-setup sets up LSP plugins and servers for the project runclaude opens.
-    for BIN in runclaude lsp-setup; do
+    # lsp-setup sets up LSP plugins and servers for the project runclaude opens;
+    # ask-llm and ask-llm-web hand simple text tasks to other models.
+    for BIN in runclaude lsp-setup ask-llm ask-llm-web; do
       if [ -e "$DEST/bin/$BIN" ] && ! cmp -s "$SRC_DIR/.claude/bin/$BIN" "$DEST/bin/$BIN"; then
         cp -p "$DEST/bin/$BIN" "$DEST/bin/$BIN.backup-$STAMP"
         echo "    backed up  $DEST/bin/$BIN.backup-$STAMP"
@@ -445,6 +446,10 @@ anthropics/claude-plugins-official code-review pr-review-toolkit code-simplifier
 # each language found under the projects root (ADR-0018). One helper does both
 # here and in runclaude.
 LSP_SETUP="$SRC_DIR/.claude/bin/lsp-setup"
+# The llm CLI behind ask-llm, with its provider plugins (Gemini, Ollama, OpenRouter;
+# OpenAI is built in).
+LLM_VERSION="0.38"
+LLM_PLUGINS="llm-gemini==0.38.1 llm-ollama==0.20.0 llm-openrouter==0.7.1"
 LSP_DEFAULT_LANGS="typescript csharp"
 
 if [ -z "$WITH_PLUGINS" ]; then
@@ -712,6 +717,31 @@ PY
   # The helper reads plugin state from CLAUDE_CONFIG_DIR, so point it at $DEST.
   CLAUDE_CONFIG_DIR="$DEST" python3 -I "$LSP_SETUP" "${LSP_ARGS[@]}" \
     || echo "!! Some LSP servers are missing; code lookups there fall back to grep." >&2
+fi
+
+# ---------------------------------------------------------------------- ask-llm
+
+if [ "$WITH_LAUNCHER" = "yes" ]; then
+  # ask-llm calls Gemini, OpenRouter, OpenAI and a local Ollama model through
+  # the llm CLI. llm and its plugins are pinned so a new release cannot change what
+  # the step installs. It runs here, after confirm_install is defined.
+  if ! command -v llm >/dev/null 2>&1; then
+    LLM_INSTALL=(uv tool install "llm==$LLM_VERSION")
+    for LLM_PLUGIN in $LLM_PLUGINS; do
+      LLM_INSTALL+=(--with "$LLM_PLUGIN")
+    done
+    if confirm_install llm \
+         "ask-llm hands simple text tasks to Gemini, OpenRouter, OpenAI or a local Ollama model through it." \
+         "${LLM_INSTALL[*]}"; then
+      if ! command -v uv >/dev/null 2>&1; then
+        echo "!! No uv, so llm is not installed. Install uv, then: ${LLM_INSTALL[*]}" >&2
+      elif "${LLM_INSTALL[@]}"; then
+        echo "    Then set the keys you have: llm keys set gemini | openrouter | openai"
+      else
+        echo "!! llm install failed; ask-llm works once it is in place." >&2
+      fi
+    fi
+  fi
 fi
 
 # ------------------------------------------------------- security-audit skill

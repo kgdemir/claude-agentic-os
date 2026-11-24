@@ -39,6 +39,9 @@ It is an installer, so read it before you run it. In full it can:
   missing tools without a further prompt and uninstalls an npm global
   `@anthropic-ai/claude-code` that sits beside the native Claude Code (never
   while a session runs from it, and never with `sudo`; ADR-0014);
+- with `--with-launcher`, offer `uv tool install llm==<pinned>` with three
+  pinned provider plugins, after asking, and install `ask-llm` and
+  `ask-llm-web` (ADR-0019);
 - append a function to your shell rc, set your global git identity and start an
   interactive login — each asked separately, and each declined automatically
   when there is no terminal or when `-y` is passed.
@@ -74,8 +77,8 @@ moved by any `cd` and `git -C`. Nothing from it is printed or kept.
   `ECC_DISABLED_HOOKS`.
 - It never sends anything anywhere. The only network access is the package
   manager, the Claude Code installer, the plugin marketplaces, npm and NuGet
-  for the two language servers, and npm and GitHub for the `security-audit`
-  skill.
+  for the two language servers, npm and GitHub for the `security-audit`
+  skill, and PyPI for `llm`.
 - It never deletes a file during an install. Replacements are backed up first,
   and guides from the old flat layout are renamed to
   `<name>.backup-<timestamp>`, not removed. A changed `security-audit` skill
@@ -83,6 +86,19 @@ moved by any `cd` and `git -C`. Nothing from it is printed or kept.
   path is
   `--prune-backups <N>`, which only removes `.backup-<timestamp>` files in the
   pack's own folders, lists them first, and needs `yes` typed in a terminal.
+
+## ask-llm sends text to other companies
+
+`ask-llm` (ADR-0019) sends the prompt and any piped text to Google, OpenRouter
+and the model provider it routes to, or OpenAI, under each one's own terms;
+free tiers may use the text for training. The rule Claude follows sends private
+text (payslips, bank or card data, customer or personal data, secrets, keys,
+connection strings, private source code) only through `--private`, which refuses
+any model but a local Ollama one. API keys are kept by `llm` in its own key file,
+never by the pack. The prompt reaches `llm` on stdin, so it never shows in the
+process list. `ask-llm-web` drives the ChatGPT or Gemini web page and keeps its
+browser profile, logins included, in `~/.claude/ask-llm-web/`; automating those
+pages is likely against their terms and can get the account banned.
 
 ## Third-party trust
 

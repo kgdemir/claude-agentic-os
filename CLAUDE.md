@@ -16,7 +16,8 @@ per-person placeholders and installs them into `~/.claude`.
   `.claude/hooks/log-usage.py` (ADR-0012),
   `.claude/hooks/check-lsp-servers.py` (ADR-0013),
   `.claude/hooks/check-symbol-search.py` (ADR-0016), `.claude/bin/runclaude`,
-  `.claude/bin/lsp-setup` (ADR-0018),
+  `.claude/bin/lsp-setup` (ADR-0018), `.claude/bin/ask-llm`,
+  `.claude/bin/ask-llm-web` (ADR-0019),
   `.claude/statusline-{linux,macos}.sh`.
 - `install.sh` — Bash; detection, substitution, plugins, statusline, settings merge,
   hook registration, auth. Inline Python for JSON edits.
@@ -27,6 +28,8 @@ per-person placeholders and installs them into `~/.claude`.
   usage reports (ADR-0009, ADR-0012, ADR-0016).
 - `tools/test-lsp-setup.sh` — `lsp-setup` against throwaway projects with stub
   `claude`, `npm` and `rustup` (ADR-0018).
+- `tools/test-ask-llm.sh` — `ask-llm` against a stub `llm`, and `ask-llm-web`'s
+  answer wait against a fake page (ADR-0019).
 - `tools/check-guides.sh` — guide structure: reason lines (baseline
   `tools/check-guides.baseline`), paths, trigger rows, YAML, leak names from the
   gitignored `tools/leak-names.local`.

@@ -16,7 +16,8 @@ step "hook syntax"
 python3 -I -c 'import sys
 for path in sys.argv[1:]:
     with open(path, encoding="utf-8") as fh:
-        compile(fh.read(), path, "exec")' .claude/hooks/*.py .claude/bin/lsp-setup
+        compile(fh.read(), path, "exec")' .claude/hooks/*.py .claude/bin/lsp-setup \
+  .claude/bin/ask-llm .claude/bin/ask-llm-web
 
 step "settings values quoted in docs"
 tools/check-values.sh
@@ -26,6 +27,9 @@ tools/test-hooks.sh
 
 step "lsp-setup"
 tools/test-lsp-setup.sh
+
+step "ask-llm"
+tools/test-ask-llm.sh
 
 step "guides"
 tools/check-guides.sh
