@@ -40,8 +40,10 @@ It is an installer, so read it before you run it. In full it can:
   `@anthropic-ai/claude-code` that sits beside the native Claude Code (never
   while a session runs from it, and never with `sudo`; ADR-0014);
 - with `--with-launcher`, offer `uv tool install llm==<pinned>` with three
-  pinned provider plugins, after asking, and install `ask-llm` and
-  `ask-llm-web` (ADR-0019);
+  pinned provider plugins, after asking, and install `ask-llm`,
+  `ask-llm-web` and `ollama-pick` (ADR-0019, ADR-0021); with `ollama`
+  present, at a terminal, list the local models that fit and pull one only
+  if you name it;
 - append a function to your shell rc, set your global git identity and start an
   interactive login — each asked separately, and each declined automatically
   when there is no terminal or when `-y` is passed.
@@ -78,7 +80,8 @@ moved by any `cd` and `git -C`. Nothing from it is printed or kept.
 - It never sends anything anywhere. The only network access is the package
   manager, the Claude Code installer, the plugin marketplaces, npm and NuGet
   for the two language servers, npm and GitHub for the `security-audit`
-  skill, and PyPI for `llm`.
+  skill, PyPI for `llm`, and ollama.com for the local model list and the
+  model you choose to pull.
 - It never deletes a file during an install. Replacements are backed up first,
   and guides from the old flat layout are renamed to
   `<name>.backup-<timestamp>`, not removed. A changed `security-audit` skill
@@ -102,6 +105,11 @@ pages is likely against their terms and can get the account banned. With no API
 key set for Gemini, OpenRouter or OpenAI, plain `ask-llm` sends the prompt to
 those pages by itself, OpenAI's and then Google's (ADR-0020); set a key, or use
 `--private`, to keep that from happening.
+
+`ollama-pick` (ADR-0021) fetches public pages from `ollama.com` with the user
+agent `ollama-pick` and sends nothing about the machine or the user; the GPU,
+RAM and disk sizes are read locally and never leave it. A model is pulled only
+by `ollama-pick --install`, run by you or after you say yes.
 
 ## Third-party trust
 

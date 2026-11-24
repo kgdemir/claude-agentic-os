@@ -75,7 +75,7 @@ holding them.
 | **Templates** | an ADR template, a C4 architecture template and a project `CLAUDE.md` template |
 | **Hooks** (warn; one blocks near a usage limit) | remind Claude: subagent briefs without `Goal:`/`Files:`/`Done:`, shell commands that break a core rule (blanket `git add`, plain force push, `reset --hard`, AI attribution, unpiped gates, secrets in the staged diff), language servers that cannot start, and text searches for a code symbol that the `LSP` tool should answer (ADR-0016); stop a new subagent near the 5-hour or weekly limit (ADR-0015); log memory, guide, skill and agent use, to find what is worth grouping or turning off (ADR-0012) |
 | **Launcher** (optional) | `runclaude <project>` — installs missing tooling, prepares the venv, fast-forwards a clean default branch, opens Claude |
-| **ask-llm** (with the launcher) | hands plain text work (drafts, translation, summaries) to Gemini, OpenRouter's free models, OpenAI or a local Ollama model, never code (ADR-0019) |
+| **ask-llm** (with the launcher) | hands plain text work (drafts, translation, summaries) to Gemini, OpenRouter's free models, OpenAI or a local Ollama model, never code (ADR-0019); `ollama-pick` offers the most used local models that fit the GPU (ADR-0021) |
 
 ## Install
 
@@ -203,6 +203,7 @@ only when `settings.json` does not already carry them:
   runclaude                      optional launcher (only with --with-launcher)
   ask-llm                        text tasks to other models (with the launcher)
   ask-llm-web                    the same through the ChatGPT or Gemini web page
+  ollama-pick                    local models that fit this GPU and disk, most used first
 ~/.claude/hooks/
   check-agent-brief.py           PreToolUse hook on the Agent tool: warns on a
                                  subagent brief without Goal:/Files:/Done:
@@ -427,10 +428,19 @@ ask-llm --web chatgpt "Reword this politely: ..."   # the ChatGPT or Gemini web 
   OpenRouter plugins (`uv tool install`, versions pinned in `install.sh`). Set the
   keys you have once: `llm keys set gemini`, `llm keys set openrouter`,
   `llm keys set openai`. They stay in `llm`'s own key file.
-- **`--private`:** only a local `ollama/<name>` model (default `ollama/llama3.2:3b`,
-  small enough for a 4 GB GPU; change it with `ASK_LLM_LOCAL_MODEL`). It refuses any
-  other model, so private text never leaves the machine. Needs `ollama serve` and
-  `ollama pull llama3.2:3b`.
+- **`--private`:** only a local `ollama/<name>` model. It refuses any other model, so
+  private text never leaves the machine. The model is `ASK_LLM_LOCAL_MODEL`, else the
+  one saved in `~/.claude/ask-llm/local-model`, else `ollama/llama3.2:3b` (small enough
+  for a 4 GB GPU). Needs `ollama serve`. Local models get `-o think false`, so thinking
+  models answer without their reasoning.
+- **Choosing the local model:** `ollama-pick [--top N] [--json]` reads the NVIDIA GPU's
+  memory (on a Mac the shared memory, elsewhere the RAM) and the free disk, fetches the
+  live list from ollama.com, most pulled first, and prints the biggest size of each
+  model updated within a year whose file fits in 85% of that memory. Embedding and
+  single-purpose models (code, OCR, translation, ...) are left out. `ollama-pick
+  --install <model>` pulls it and saves it as the `--private` model. The installer
+  shows the top 3 and asks; Claude offers them once per session when none is in use,
+  and pulls only after a yes (ADR-0021).
 - **`--web chatgpt|gemini`:** runs `ask-llm-web`, which types the prompt into the
   site's page in Chrome with Playwright (through `uv run --script`) and returns the
   answer. Both sites answer guests; `--login` keeps a login in
@@ -482,6 +492,7 @@ report a problem.
 | `tools/check.sh` | every gate before a commit; CI (`.github/workflows/ci.yml`) runs the same script |
 | `tools/test-hooks.sh` | feeds sample events to the hooks; each warn or log case has a silent twin, and the usage reports are checked |
 | `tools/test-ask-llm.sh` | runs `ask-llm` against a stub `llm` (chain, empty answers, `--private`, missing tools) and `ask-llm-web`'s answer wait against a fake page |
+| `tools/test-ollama-pick.sh` | runs `ollama-pick` against pages shaped like ollama.com's and stub `nvidia-smi` and `ollama` (parsing, fit, disk, install) |
 | `tools/check-guides.sh` | each add-on rule has a `*Cost:*`/`*Why:*` line, pack paths resolve, each add-on has a trigger row, YAML blocks parse, no project name from the local `tools/leak-names.local` appears |
 | `tools/check-values.sh` | settings values quoted in the docs match `install.sh` |
 | `tools/sync-live.sh [--dry-run]` | copies changed rules, templates and hooks into your live `~/.claude` with backups, using your install answers from the gitignored `tools/sync-live.local`; never edits `settings.json` and reports hooks still to register with `./install.sh` |
