@@ -17,7 +17,7 @@ per-person placeholders and installs them into `~/.claude`.
   `.claude/hooks/check-lsp-servers.py` (ADR-0013),
   `.claude/hooks/check-symbol-search.py` (ADR-0016), `.claude/bin/runclaude`,
   `.claude/bin/lsp-setup` (ADR-0018), `.claude/bin/ask-llm`,
-  `.claude/bin/ask-llm-web` (ADR-0019),
+  `.claude/bin/ask-llm-web` (ADR-0019, ADR-0020),
   `.claude/statusline-{linux,macos}.sh`.
 - `install.sh` — Bash; detection, substitution, plugins, statusline, settings merge,
   hook registration, auth. Inline Python for JSON edits.

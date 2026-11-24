@@ -24,3 +24,4 @@ renumbered; an accepted ADR is superseded, not rewritten.
 | [0017](0017-lsp-guide-is-a-core-guide.md) | The LSP guide is a core guide, loaded in every session | accepted | 2026-11-24 |
 | [0018](0018-lsp-setup-per-project-language.md) | LSP plugins and servers follow the languages a project uses | accepted | 2026-11-24 |
 | [0019](0019-ask-llm-text-tasks-to-other-models.md) | Plain text work goes to other models through ask-llm, never code | accepted | 2026-11-25 |
+| [0020](0020-ask-llm-web-fallback-without-keys.md) | ask-llm falls back to the web pages when no API key is set | accepted | 2026-11-25 |

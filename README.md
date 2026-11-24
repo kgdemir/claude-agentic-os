@@ -407,7 +407,8 @@ summary that needs no project knowledge, big enough to write straight to a file.
 It is **never** used for code, tests, scripts, commands, configuration or reviews.
 
 ```bash
-ask-llm "Translate to English:" < notes.md          # Gemini, then OpenRouter free, then OpenAI
+ask-llm "Translate to English:" < notes.md          # Gemini, then OpenRouter free, then OpenAI;
+                                                    # with no API key, the ChatGPT, then Gemini web page
 ask-llm --out draft.md "Write release notes for:" < changes.txt
 ask-llm --private "Summarise:" < payslip.txt         # local Ollama only, never a remote model
 ask-llm --web chatgpt "Reword this politely: ..."   # the ChatGPT or Gemini web page
@@ -417,6 +418,10 @@ ask-llm --web chatgpt "Reword this politely: ..."   # the ChatGPT or Gemini web 
   router over its free models), `gpt-5.4-mini`. A model with no key, a used-up free
   limit, an error or an empty answer is skipped, and the one that answered is named.
   Change it with `ASK_LLM_CHAIN` (space-separated `llm` model ids).
+- **No API key at all:** when no key for Gemini, OpenRouter or OpenAI is set, in
+  `llm`'s key file or as `LLM_GEMINI_KEY`, `OPENROUTER_KEY` or `OPENAI_API_KEY`,
+  the default chain goes to the ChatGPT web page, then the Gemini one, and says so
+  on stderr (ADR-0020). `--private`, `--model` and `ASK_LLM_CHAIN` never do.
 - **Keys:** the installer offers the `llm` CLI 0.38 with its Gemini, Ollama and
   OpenRouter plugins (`uv tool install`, versions pinned in `install.sh`). Set the
   keys you have once: `llm keys set gemini`, `llm keys set openrouter`,
@@ -430,7 +435,7 @@ ask-llm --web chatgpt "Reword this politely: ..."   # the ChatGPT or Gemini web 
   answer. Both sites answer guests; `--login` keeps a login in
   `~/.claude/ask-llm-web/<site>` for better models. Automating these pages is likely
   against both sites' terms and can get an account banned, and the pages change
-  without notice, so Claude uses it only when you ask.
+  without notice, so once a key is set Claude uses `--web` only when you ask.
 
 ## Adapting the rules
 

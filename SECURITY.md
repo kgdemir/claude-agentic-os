@@ -98,7 +98,10 @@ any model but a local Ollama one. API keys are kept by `llm` in its own key file
 never by the pack. The prompt reaches `llm` on stdin, so it never shows in the
 process list. `ask-llm-web` drives the ChatGPT or Gemini web page and keeps its
 browser profile, logins included, in `~/.claude/ask-llm-web/`; automating those
-pages is likely against their terms and can get the account banned.
+pages is likely against their terms and can get the account banned. With no API
+key set for Gemini, OpenRouter or OpenAI, plain `ask-llm` sends the prompt to
+those pages by itself, OpenAI's and then Google's (ADR-0020); set a key, or use
+`--private`, to keep that from happening.
 
 ## Third-party trust
 

@@ -99,3 +99,9 @@ Implemented in commit `b975eff`.
   Gemini); the script cannot tell the two apart.
 - The web page selectors break without notice; the test covers the wait logic,
   not the live pages.
+
+## Amendment 2026-11-25
+
+With no API key set for the default chain, plain `ask-llm` now goes to the
+ChatGPT and then the Gemini web page by itself; the "only when the user asks"
+part of decisions 3 and 5 holds only once a key is set (ADR-0020).
