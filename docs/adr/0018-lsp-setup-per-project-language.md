@@ -19,7 +19,7 @@ checked.
 
 ## Decision
 
-1. **One helper, `.claude/bin/lsp-setup`** (Python, standard library, run with `python3 -I`).
+1. **One helper, `.claude/bin/lsp-setup`** (commit `bd0132d`; Python, standard library, run with `python3 -I`).
    It knows five languages, the ones whose server installs without sudo:
 
    | Language | Marker files | Plugin | Server, installed with |
